@@ -35,50 +35,79 @@ A macOS menu bar / notch-wing app that shows real-time LLM usage across multiple
 - **Always local** — all credentials and usage data stay on the user's Mac (Keychain, local files). No backend server, no telemetry sent anywhere.
 - **Always visible** — lives in the notch wing, not hidden behind a click
 - **Zero config where possible** — auto-detects Claude, Gemini CLI from local files; only API keys needed for API-based providers
-- **Graceful degradation** — works on non-notch Macs as a menu bar item
+- **Consistent experience across displays** — hardware notch uses physical cutout as anchor; all other screens render a software notch identical in shape
 
 ---
 
 ## 4. Window Behavior
 
-### 4.1 Wing Display (notch Macs)
+### 4.1 Display Mode Detection
 
-The app occupies the **right wing** of the notch — the black area to the right of the physical notch cutout. Content is permanently visible without obscuring the notch itself.
+The app detects the display configuration at launch and on screen change, and renders accordingly:
+
+| Scenario | Behavior |
+|---|---|
+| **MacBook with physical notch** | Wing slides out beside the real hardware notch cutout. App only occupies the wing area — physical notch stays as-is. |
+| **MacBook without notch** | App renders a **software notch** — draws the full notch shape (black, same curve as hardware notch) at top center of screen. Wings slide out from either side of this drawn shape. |
+| **External display only** (clamshell or standalone) | App renders a software notch on the external display — same as above. |
+| **Extended display** (MacBook + external) | App renders on **both screens independently** — hardware notch on MacBook, software notch on external display. Each shows the same usage data. |
+| **Mirroring** | Renders on primary screen only. Mirror naturally duplicates it. |
+
+### 4.2 Hardware Notch Mode
+
+The app occupies the **right wing** — the black area to the right of the physical notch cutout. The physical notch center is untouched.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  [menu bar items...]   ███ NOTCH ███   $1.24 ▌cl gpt ▌  │
-│                                         RIGHT WING       │
+│  [  menu bar items  ]  ▓▓▓NOTCH▓▓▓  [ claude icon ]     │
+│                         (physical)    RIGHT WING         │
 └──────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 Auto-Collapse (Idle Behavior)
+### 4.3 Software Notch Mode
 
-When there is no active LLM token usage, the wing widget **folds into the notch** (collapses to invisible / minimal state).
+The app draws the **entire notch shape** at top center — a black rounded-rectangle cutout identical in appearance to the hardware notch. Wings extend from both sides of this drawn shape. The menu bar on the left of the software notch is empty (app owns that space).
+
+```
+┌──────────────────────────────────────────────────────────┐
+│               ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  [ claude icon ]     │
+│               (app-drawn notch shape)  RIGHT WING        │
+└──────────────────────────────────────────────────────────┘
+```
+
+The software notch shape matches the hardware notch dimensions (approx 126×37pt) so the experience is visually identical across all display types.
+
+### 4.4 Wing Appearance (both modes)
+
+- App icons appear in the **right wing** beside the notch
+- Each active provider shows as a **circular icon** with a color ring indicating usage level
+- Wings are only visible when at least one provider is active (see §4.5)
+
+### 4.5 Auto-Collapse (Idle Behavior)
+
+The notch **only appears when an LLM app is actively being used**. When no usage is detected:
+- Wing shrinks → scales down to a circle → shrinks to a dot → disappears (2 second animation)
+- After the configured idle timeout, the entire notch hides
 
 **Default behavior:** Collapse after **30 minutes** of inactivity.
 
 **User-configurable options:**
 | Option | Description |
 |---|---|
-| Never collapse | Always show wing widget |
+| Never collapse | Always show when any provider is connected |
 | 5 minutes | Collapse after 5 min of inactivity |
 | 15 minutes | Collapse after 15 min of inactivity |
 | **30 minutes** (default) | Collapse after 30 min of inactivity |
 | 1 hour | Collapse after 1 hour of inactivity |
 | When screen locks | Collapse when Mac locks/sleeps |
 
-"Inactivity" = no new tokens tracked across any connected provider.
+"Inactivity" = no new tokens tracked across any connected provider for the duration.
 
-**Re-expand trigger:** Any new token usage from any provider automatically re-expands the wing.
+**Re-expand trigger:** Any new token usage from any provider re-expands the wing with the slide-out animation.
 
-### 4.3 Expanded Panel (on click)
+### 4.6 Expanded Panel (on click)
 
-Clicking the wing widget expands a panel downward showing full usage details per provider.
-
-### 4.4 Fallback (non-notch Macs)
-
-On Macs without a notch, the app falls back to a standard **menu bar item** with the same expanded panel on click.
+Clicking the wing expands a dropdown panel showing per-provider usage bars + cost. Gradients used in dropdown view only; solid colors in wing icons.
 
 ---
 
@@ -91,27 +120,39 @@ These are the core 5 providers targeting power users and general users who use L
 | Priority | Provider | Auth Method | What is tracked | User type |
 |---|---|---|---|---|
 | 1 | **Claude / Claude Code** | Session cookie → claude.ai API + `~/.claude/` JSONL | 5-hour %, 7-day %, plan tier, reset time, active session tokens | All users |
-| 2 | **ChatGPT** (OpenAI) | Session cookie (web) + API key (API users) | Plus/Pro quota %, API monthly spend, per-model breakdown | All users |
-| 3 | **Cursor** | Local file read (`~/.cursor/`) | Session token usage, monthly spend vs plan | Developers |
-| 4 | **Codex** (OpenAI) | Local JSONL (`~/.codex/`) | Token usage per session, cost estimate | Developers |
-| 5 | **Antigravity** | Google session cookie → Gemini quota API | Usage vs Gemini quota (shared) | Developers |
+| 2 | **ChatGPT + Codex** (OpenAI) | ChatGPT session cookie / account | Plan quota %, Codex request usage — single unified account | All users |
+| 3 | **Cursor** | Local file read (`~/.cursor/`) | Fast request quota used vs plan limit (500/mo on Pro) | Developers |
+| 4 | **Antigravity** | Google session cookie → Google AI plan API | Agent request quota by plan tier (Plus/Pro/Ultra) | Developers |
 
 ### 5.2 Tier 1 — Full Support (reliable)
 
 | Provider | Auth Method | What is tracked |
 |---|---|---|
 | **Claude** (Anthropic) | Session cookie → claude.ai internal API | 5-hour rolling limit %, 7-day limit %, plan tier (Free/Pro/Max/Team), reset time |
-| **ChatGPT / OpenAI API** | Session cookie (web) + API key | Plus/Pro quota, monthly API spend, per-model breakdown |
-| **Cursor** | Local file read (`~/.cursor/`) | Session usage, plan limits |
-| **Codex CLI** | Local JSONL (`~/.codex/sessions/`) | Token counts, cost estimate |
+| **ChatGPT + Codex** (OpenAI) | ChatGPT session cookie | Plan quota %, Codex usage — both tied to same ChatGPT subscription (Plus/Pro/Business/Edu/Enterprise). Free and Go plans get limited Codex access. No separate Codex subscription. |
+| **Cursor** | Local file read (`~/.cursor/`) | Fast request quota (e.g. 500/mo on Pro), fallback to slow requests when exceeded |
 
 ### 5.3 Tier 2 — Best Effort (may break on provider changes)
 
 | Provider | Auth Method | What is tracked | Notes |
 |---|---|---|---|
-| **Antigravity** | Google session cookie → Gemini quota API | Usage vs Gemini quota | Antigravity is Google's Gemini-powered IDE (VS Code-based). Stores conversations as binary protobuf (`.pb`) — not parseable like JSONL. Shares Gemini model quota with Google account. Tracked same way as Gemini web. |
-| **Gemini / Gemini CLI** | Local file read (`~/.gemini/`) + Google session cookie | Monthly token count, approx cost | CLI logs at `~/.gemini/`; Antigravity sessions at `~/.gemini/antigravity/` |
+| **Antigravity** | Google session cookie → Google AI plan API | Agent request quota (Limited/Higher/Highest by plan) | Tied to Google AI Plus/Pro/Ultra subscription — NOT raw Gemini API tokens. Plan tier controls how many Antigravity agent requests you can run. Stored locally as `.pb` protobuf files — not directly parseable. |
+| **Gemini CLI** | Local file read (`~/.gemini/`) + Google session cookie | Daily request limits per Google AI plan tier | Also governed by Google AI Plus/Pro/Ultra plan. CLI logs at `~/.gemini/`. Separate from Gemini API (pay-as-you-go). |
 | **ChatGPT web** | Session cookie scraping | Best-effort quota display | No official consumer quota API |
+
+#### Google AI Plans — How They Affect Antigravity + Gemini CLI
+
+These two products are governed by the same Google AI subscription tier (one.google.com/about/google-ai-plans):
+
+| Google AI Plan | Antigravity Limits | Gemini CLI Limits |
+|---|---|---|
+| **Plus** | Limited | Limited |
+| **Pro** | Higher | Higher |
+| **Ultra** | Highest | Highest |
+
+This is separate from the **Gemini API** (pay-per-token, API key based, used by developers building apps). Both can exist in parallel:
+- **Gemini API** → tracked via API key + token spend (v2)
+- **Antigravity + Gemini CLI** → tracked via Google AI plan quota (v1, best-effort)
 
 ### 5.4 Future Providers (v2)
 
@@ -157,10 +198,11 @@ Drops down on click from the wing widget.
 
 **Per-provider rows:**
 ```
-● Claude     ████████░░  82%    resets in 1h 20m
-● OpenAI     ████░░░░░░  38%    $7.60 / $20.00
-● DeepSeek   ██░░░░░░░░  19%    resets in 12d
-● Gemini     █░░░░░░░░░   9%    ~est.
+● Claude       ████████░░  82%    resets in 1h 20m  (Pro plan)
+● ChatGPT      ████░░░░░░  38%    resets in 3d      (Plus plan)
+  └ Codex      ██░░░░░░░░  19%    bundled with ChatGPT
+● Cursor       ██████░░░░  61%    310/500 fast reqs
+● Antigravity  ███░░░░░░░  30%    Google AI Pro
 ```
 
 Each row shows:
