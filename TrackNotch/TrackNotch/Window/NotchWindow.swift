@@ -34,8 +34,8 @@ final class NotchWindow: NSPanel {
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
 
-        // Sit above menu bar, below nothing
-        level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)) - 1)
+        // Above the menu bar (25) so it sits in the notch wing area
+        level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.statusWindow)))
 
         // Visible on all spaces, full screen included
         collectionBehavior = [
@@ -60,8 +60,12 @@ final class NotchWindow: NSPanel {
     // MARK: - Public
 
     func show() {
-        setFrame(mode.windowFrame, display: false)
+        setFrame(mode.windowFrame, display: true)
         orderFrontRegardless()
+        // Ensure it stays on screen after a layout pass
+        DispatchQueue.main.async { [weak self] in
+            self?.orderFrontRegardless()
+        }
     }
 
     // MARK: - Overrides

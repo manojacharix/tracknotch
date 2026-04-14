@@ -5,10 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-
-        Task { @MainActor in
-            DisplayCoordinator.shared.setup()
-        }
+        DisplayCoordinator.shared.setup()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

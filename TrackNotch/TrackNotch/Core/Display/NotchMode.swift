@@ -42,17 +42,25 @@ enum NotchMode {
 
     // MARK: - Helpers
 
+    /// Compact window width for the notch wing widget
+    private static let wingWidth: CGFloat = 160
+
     /// Frame for the right wing where app icons appear
     var rightWingFrame: NSRect {
         switch self {
         case .hardwareNotch(_, _, let rightWing):
-            return rightWing
+            // Only use the left portion of the right wing area (closest to notch)
+            return NSRect(
+                x: rightWing.origin.x,
+                y: rightWing.origin.y,
+                width: Self.wingWidth,
+                height: rightWing.height
+            )
         case .softwareNotch(let center):
-            // Right wing starts at right edge of software notch
             return NSRect(
                 x: center.maxX,
                 y: center.origin.y,
-                width: 160,
+                width: Self.wingWidth,
                 height: center.height
             )
         }
@@ -61,14 +69,14 @@ enum NotchMode {
     /// Frame for the full window (software notch needs to cover center + wing)
     var windowFrame: NSRect {
         switch self {
-        case .hardwareNotch(_, _, let rightWing):
-            return rightWing
+        case .hardwareNotch:
+            return rightWingFrame
         case .softwareNotch(let center):
             // Window covers both the drawn notch and the right wing
             return NSRect(
                 x: center.origin.x,
                 y: center.origin.y,
-                width: center.width + 160,
+                width: center.width + Self.wingWidth,
                 height: center.height
             )
         }
