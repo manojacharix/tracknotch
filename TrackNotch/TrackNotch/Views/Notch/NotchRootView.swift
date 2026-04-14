@@ -11,19 +11,26 @@ struct NotchRootView: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 0) {
+        VStack(spacing: 0) {
             switch mode {
             case .hardwareNotch:
-                WingView(isHovered: $isHovered, onTap: onToggleDropdown)
-                Spacer()
+                HStack(spacing: 0) {
+                    WingView(isHovered: $isHovered, onTap: onToggleDropdown)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
 
             case .softwareNotch:
-                SoftwareNotchShape()
-                    .fill(Color.black)
-                    .frame(width: 126, height: 37)
-                WingView(isHovered: $isHovered, onTap: onToggleDropdown)
-                Spacer()
+                HStack(spacing: 0) {
+                    SoftwareNotchShape()
+                        .fill(Color.black)
+                        .frame(width: 126, height: 37)
+                    WingView(isHovered: $isHovered, onTap: onToggleDropdown)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
             }
+            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
