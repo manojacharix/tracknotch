@@ -53,8 +53,20 @@ final class NotchWindow: NSPanel {
         let rootView = NotchRootView(mode: mode)
             .environmentObject(ProviderRegistry.shared)
             .environmentObject(AppSettings.shared)
+            .frame(
+                width: mode.windowFrame.width,
+                height: mode.windowFrame.height,
+                alignment: .leading
+            )
 
-        contentView = NSHostingView(rootView: rootView)
+        let hostingView = NSHostingView(rootView: rootView)
+        // Prevent NSHostingView from trying to resize our window
+        hostingView.sizingOptions = []
+        hostingView.frame = CGRect(
+            origin: .zero,
+            size: CGSize(width: mode.windowFrame.width, height: mode.windowFrame.height)
+        )
+        contentView = hostingView
     }
 
     // MARK: - Public

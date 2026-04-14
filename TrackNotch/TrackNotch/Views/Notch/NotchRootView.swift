@@ -14,30 +14,35 @@ struct NotchRootView: View {
         ZStack(alignment: .topLeading) {
             switch mode {
             case .hardwareNotch:
-                // Only render the wing — physical notch handles center
-                WingView(isExpanded: $isExpanded, isHovered: $isHovered)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Wing anchored to leading (left) edge — sits right beside the notch
+                HStack {
+                    WingView(isExpanded: $isExpanded, isHovered: $isHovered)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             case .softwareNotch:
-                // Render drawn notch shape + wing together
                 HStack(spacing: 0) {
                     SoftwareNotchShape()
                         .fill(Color.black)
                         .frame(width: 126, height: 37)
 
                     WingView(isExpanded: $isExpanded, isHovered: $isHovered)
+                    Spacer()
                 }
             }
 
             // Dropdown panel slides down on expand
             if isExpanded {
-                VStack {
-                    Spacer().frame(height: 37)
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: 37)
                     DropdownPanelView()
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
