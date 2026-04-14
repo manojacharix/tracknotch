@@ -10,45 +10,73 @@ struct DropdownPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Per-provider rows
-            if isEditMode {
-                EditableProviderList(providers: $providerOrder, registry: registry)
+            if providerOrder.filter({ registry.usageMap[$0] != nil }).isEmpty {
+                // Empty state — no providers connected yet
+                VStack(spacing: 14) {
+                    Image(systemName: "plus.circle.dashed")
+                        .font(.system(size: 32))
+                        .foregroundColor(.white.opacity(0.25))
+
+                    Text("No providers connected")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.5))
+
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Text("Add connectors")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(Color.white.opacity(0.12))
+                            )
+                    }
+                    .buttonStyle(.borderless)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 28)
             } else {
-                VStack(spacing: 2) {
-                    ForEach(providerOrder, id: \.self) { provider in
-                        if let usage = registry.usageMap[provider] {
-                            DropdownProviderRow(usage: usage)
+                // Per-provider rows
+                if isEditMode {
+                    EditableProviderList(providers: $providerOrder, registry: registry)
+                } else {
+                    VStack(spacing: 2) {
+                        ForEach(providerOrder, id: \.self) { provider in
+                            if let usage = registry.usageMap[provider] {
+                                DropdownProviderRow(usage: usage)
+                            }
                         }
                     }
                 }
-            }
 
-            Divider()
-                .background(Color.white.opacity(0.1))
+                Divider()
+                    .background(Color.white.opacity(0.1))
 
-            // Footer
-            HStack {
-                Button("settings") { showSettings = true }
+                // Footer
+                HStack {
+                    Button("settings") { showSettings = true }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
+                        .foregroundColor(.white.opacity(0.5))
+
+                    Spacer()
+
+                    Button(isEditMode ? "done" : "edit") {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if isEditMode { registry.saveProviderOrder(providerOrder) }
+                            isEditMode.toggle()
+                        }
+                    }
                     .buttonStyle(.borderless)
                     .font(.system(size: 12, weight: .regular, design: .rounded))
                     .foregroundColor(.white.opacity(0.5))
-
-                Spacer()
-
-                Button(isEditMode ? "done" : "edit") {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        if isEditMode {
-                            registry.saveProviderOrder(providerOrder)
-                        }
-                        isEditMode.toggle()
-                    }
                 }
-                .buttonStyle(.borderless)
-                .font(.system(size: 12, weight: .regular, design: .rounded))
-                .foregroundColor(.white.opacity(0.5))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
         }
         .padding(.vertical, 10)
         .background(
