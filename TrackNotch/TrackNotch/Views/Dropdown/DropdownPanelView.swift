@@ -3,6 +3,7 @@ import SwiftUI
 /// Dropdown panel that slides down from the notch on click.
 /// Shows per-provider usage bars with quota% (subscription) or $spend (API token).
 struct DropdownPanelView: View {
+    var onDismiss: (() -> Void)? = nil
     @EnvironmentObject var registry: ProviderRegistry
     @State private var isEditMode = false
     @State private var showSettings = false

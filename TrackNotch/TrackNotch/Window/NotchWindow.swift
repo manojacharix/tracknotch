@@ -1,12 +1,14 @@
 import AppKit
 import SwiftUI
 
-/// The main window that renders either beside the hardware notch
-/// or draws the full software notch shape on displays without one.
+/// The slim 37pt wing window that sits permanently beside the notch.
+/// Owns a DropdownWindow child that appears/disappears below it on click.
 final class NotchWindow: NSPanel {
 
     let targetScreen: NSScreen
     let mode: NotchMode
+    private var dropdownWindow: DropdownWindow?
+    private(set) var isDropdownVisible = false
 
     init(screen: NSScreen, mode: NotchMode) {
         self.targetScreen = screen
@@ -34,10 +36,8 @@ final class NotchWindow: NSPanel {
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
 
-        // Above the menu bar (25) so it sits in the notch wing area
         level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.statusWindow)))
 
-        // Visible on all spaces, full screen included
         collectionBehavior = [
             .canJoinAllSpaces,
             .stationary,
@@ -45,22 +45,18 @@ final class NotchWindow: NSPanel {
             .ignoresCycle
         ]
 
-        // Force dark appearance to match menu bar
         appearance = NSAppearance(named: .darkAqua)
     }
 
     private func setContent() {
-        let rootView = NotchRootView(mode: mode)
-            .environmentObject(ProviderRegistry.shared)
-            .environmentObject(AppSettings.shared)
-            .frame(
-                width: mode.windowFrame.width,
-                height: mode.windowFrame.height,
-                alignment: .leading
-            )
+        let rootView = NotchRootView(mode: mode, onToggleDropdown: { [weak self] in
+            self?.toggleDropdown()
+        })
+        .environmentObject(ProviderRegistry.shared)
+        .environmentObject(AppSettings.shared)
+        .frame(width: mode.windowFrame.width, height: mode.windowFrame.height, alignment: .leading)
 
         let hostingView = NSHostingView(rootView: rootView)
-        // Prevent NSHostingView from trying to resize our window
         hostingView.sizingOptions = []
         hostingView.frame = CGRect(
             origin: .zero,
@@ -69,12 +65,39 @@ final class NotchWindow: NSPanel {
         contentView = hostingView
     }
 
+    // MARK: - Dropdown
+
+    func toggleDropdown() {
+        if isDropdownVisible {
+            closeDropdown()
+        } else {
+            openDropdown()
+        }
+    }
+
+    private func openDropdown() {
+        isDropdownVisible = true
+        let dropdown = DropdownWindow(wingFrame: mode.windowFrame)
+        dropdown.present(onDismiss: { [weak self] in
+            self?.isDropdownVisible = false
+            self?.dropdownWindow = nil
+        })
+        dropdownWindow = dropdown
+        addChildWindow(dropdown, ordered: .below)
+    }
+
+    private func closeDropdown() {
+        dropdownWindow?.dismissWindow(onDismiss: { [weak self] in
+            self?.isDropdownVisible = false
+            self?.dropdownWindow = nil
+        })
+    }
+
     // MARK: - Public
 
     func show() {
         setFrame(mode.windowFrame, display: true)
         orderFrontRegardless()
-        // Ensure it stays on screen after a layout pass
         DispatchQueue.main.async { [weak self] in
             self?.orderFrontRegardless()
         }

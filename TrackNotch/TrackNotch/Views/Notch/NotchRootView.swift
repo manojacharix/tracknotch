@@ -1,48 +1,31 @@
 import SwiftUI
 
-/// Root SwiftUI view rendered inside NotchWindow.
-/// Switches between hardware notch mode (wing only)
-/// and software notch mode (drawn notch + wing).
+/// Root SwiftUI view rendered inside the slim 37pt NotchWindow.
+/// All it does is show the wing icons and respond to hover/tap.
+/// The dropdown is a separate DropdownWindow managed by NotchWindow.
 struct NotchRootView: View {
     let mode: NotchMode
+    let onToggleDropdown: () -> Void
 
     @EnvironmentObject var registry: ProviderRegistry
-    @State private var isExpanded = false
     @State private var isHovered = false
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        HStack(spacing: 0) {
             switch mode {
             case .hardwareNotch:
-                // Wing anchored to leading (left) edge — sits right beside the notch
-                HStack {
-                    WingView(isExpanded: $isExpanded, isHovered: $isHovered)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                WingView(isHovered: $isHovered, onTap: onToggleDropdown)
+                Spacer()
 
             case .softwareNotch:
-                HStack(spacing: 0) {
-                    SoftwareNotchShape()
-                        .fill(Color.black)
-                        .frame(width: 126, height: 37)
-
-                    WingView(isExpanded: $isExpanded, isHovered: $isHovered)
-                    Spacer()
-                }
-            }
-
-            // Dropdown panel slides down on expand
-            if isExpanded {
-                VStack(spacing: 0) {
-                    Color.clear.frame(height: 37)
-                    DropdownPanelView()
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                SoftwareNotchShape()
+                    .fill(Color.black)
+                    .frame(width: 126, height: 37)
+                WingView(isHovered: $isHovered, onTap: onToggleDropdown)
+                Spacer()
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -51,8 +34,6 @@ struct SoftwareNotchShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         let cornerRadius: CGFloat = 10
-
-        // Draw notch shape — rounded bottom corners, flat top (sits at screen edge)
         path.move(to: CGPoint(x: 0, y: 0))
         path.addLine(to: CGPoint(x: rect.width, y: 0))
         path.addLine(to: CGPoint(x: rect.width, y: rect.height - cornerRadius))

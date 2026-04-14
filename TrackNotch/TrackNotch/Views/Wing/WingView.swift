@@ -4,8 +4,8 @@ import AppKit
 /// The wing area showing active provider icons beside the notch.
 /// Always visible on the right wing — shows a pulsing + when no providers connected.
 struct WingView: View {
-    @Binding var isExpanded: Bool
     @Binding var isHovered: Bool
+    let onTap: () -> Void
     @EnvironmentObject var registry: ProviderRegistry
 
     var body: some View {
@@ -41,9 +41,7 @@ struct WingView: View {
             NSHapticFeedbackManager.defaultPerformer.perform(
                 .levelChange, performanceTime: .default
             )
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                isExpanded.toggle()
-            }
+            onTap()
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: registry.activeProviders)
     }
