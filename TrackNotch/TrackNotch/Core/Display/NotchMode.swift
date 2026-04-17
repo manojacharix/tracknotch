@@ -2,88 +2,89 @@ import AppKit
 
 /// Determines which rendering mode to use for a given screen.
 enum NotchMode {
-    /// MacBook with a physical notch — app renders wings beside the cutout
-    case hardwareNotch(notchFrame: NSRect, leftWing: NSRect, rightWing: NSRect)
-
-    /// No physical notch — app draws the full notch shape itself
-    case softwareNotch(centerFrame: NSRect)
-
-    // MARK: - Detection
+    case hardwareNotch
+    case softwareNotch
 
     static func detect(for screen: NSScreen) -> NotchMode {
-        if let leftArea = screen.auxiliaryTopLeftArea,
-           let rightArea = screen.auxiliaryTopRightArea,
-           leftArea.width > 0, rightArea.width > 0 {
-
-            // Physical notch exists — calculate its frame
-            let screenFrame = screen.frame
-            let notchWidth = screenFrame.width - leftArea.width - rightArea.width
-            let notchHeight = max(leftArea.height, rightArea.height, 37)
-            let notchX = screenFrame.origin.x + leftArea.width
-            let notchY = screenFrame.origin.y + screenFrame.height - notchHeight
-
-            let notchFrame = NSRect(x: notchX, y: notchY, width: notchWidth, height: notchHeight)
-            let leftWingFrame = NSRect(x: screenFrame.origin.x, y: notchY, width: leftArea.width, height: notchHeight)
-            let rightWingFrame = NSRect(x: notchX + notchWidth, y: notchY, width: rightArea.width, height: notchHeight)
-
-            return .hardwareNotch(notchFrame: notchFrame, leftWing: leftWingFrame, rightWing: rightWingFrame)
+        if let left = screen.auxiliaryTopLeftArea, left.width > 0 {
+            return .hardwareNotch
         }
-
-        // No physical notch — use software notch
-        let screenFrame = screen.frame
-        let notchWidth: CGFloat = 126
-        let notchHeight: CGFloat = 37
-        let notchX = screenFrame.origin.x + (screenFrame.width - notchWidth) / 2
-        let notchY = screenFrame.origin.y + screenFrame.height - notchHeight
-
-        let centerFrame = NSRect(x: notchX, y: notchY, width: notchWidth, height: notchHeight)
-        return .softwareNotch(centerFrame: centerFrame)
+        if screen.safeAreaInsets.top > 0 {
+            return .hardwareNotch
+        }
+        return .softwareNotch
     }
 
-    // MARK: - Helpers
+    var isHardware: Bool { self == .hardwareNotch }
+}
 
-    /// Compact window width for the notch wing widget
-    private static let wingWidth: CGFloat = 160
+// MARK: - Sizing helpers (mirrors agentnotch NotchSizing)
 
-    /// Frame for the right wing where app icons appear
-    var rightWingFrame: NSRect {
-        switch self {
-        case .hardwareNotch(_, _, let rightWing):
-            // Only use the left portion of the right wing area (closest to notch)
-            return NSRect(
-                x: rightWing.origin.x,
-                y: rightWing.origin.y,
-                width: Self.wingWidth,
-                height: rightWing.height
-            )
-        case .softwareNotch(let center):
-            return NSRect(
-                x: center.maxX,
-                y: center.origin.y,
-                width: Self.wingWidth,
-                height: center.height
-            )
+let trackNotchWindowWidth: CGFloat  = 580
+let trackNotchWindowHeight: CGFloat = 400
+let trackNotchGlowPadding: CGFloat  = 24
+
+/// The actual notch block size read from the screen (hardware or fallback).
+@MainActor
+func getNotchBlockSize(screen: NSScreen? = nil) -> CGSize {
+    let s = screen ?? NSScreen.main
+    var w: CGFloat = 200
+    var h: CGFloat = 37
+
+    if let screen = s {
+        if let l = screen.auxiliaryTopLeftArea, let r = screen.auxiliaryTopRightArea {
+            w = screen.frame.width - l.width - r.width + 4
+        }
+        if screen.safeAreaInsets.top > 0 {
+            h = screen.safeAreaInsets.top
+        } else {
+            let mb = screen.frame.maxY - screen.visibleFrame.maxY
+            h = mb < 24 ? 37 : mb
         }
     }
+    return CGSize(width: w, height: h + 2)
+}
 
-    /// Frame for the full window (software notch needs to cover center + wing)
-    var windowFrame: NSRect {
-        switch self {
-        case .hardwareNotch:
-            return rightWingFrame
-        case .softwareNotch(let center):
-            // Window covers both the drawn notch and the right wing
-            return NSRect(
-                x: center.origin.x,
-                y: center.origin.y,
-                width: center.width + Self.wingWidth,
-                height: center.height
-            )
-        }
-    }
+/// Geometry describing the notch and wing areas for layout.
+struct NotchGeometry {
+    let windowFrame: NSRect   // full panel frame
+    let leftWingWidth: CGFloat   // space left of notch block
+    let notchWidth: CGFloat      // physical notch block width
+    let rightWingWidth: CGFloat  // space right of notch block
+    let notchHeight: CGFloat
+}
 
-    var isHardware: Bool {
-        if case .hardwareNotch = self { return true }
-        return false
-    }
+/// Compute the full panel frame and wing widths from screen geometry.
+@MainActor
+func notchGeometry(screen: NSScreen? = nil) -> NotchGeometry {
+    let s = screen ?? NSScreen.main ?? NSScreen.screens[0]
+    let sf = s.frame
+
+    // Physical notch block
+    let leftAuxW  = s.auxiliaryTopLeftArea?.width  ?? (sf.width / 2 - 100)
+    let rightAuxW = s.auxiliaryTopRightArea?.width ?? (sf.width / 2 - 100)
+    let notchW    = sf.width - leftAuxW - rightAuxW
+    var notchH: CGFloat = 37
+    if s.safeAreaInsets.top > 0 { notchH = s.safeAreaInsets.top }
+
+    // Wing widths — extend 200pt beyond notch on each side
+    let wingW: CGFloat = 200
+    let winX = sf.origin.x + leftAuxW - wingW
+    let winW = wingW + notchW + wingW
+    let winY = sf.origin.y + sf.height - trackNotchWindowHeight
+
+    let frame = NSRect(x: winX, y: winY, width: winW, height: trackNotchWindowHeight)
+    return NotchGeometry(
+        windowFrame: frame,
+        leftWingWidth: wingW,
+        notchWidth: notchW,
+        rightWingWidth: wingW,
+        notchHeight: notchH + 2
+    )
+}
+
+/// Backwards-compat helper used by NotchWindow.
+@MainActor
+func notchPanelFrame(screen: NSScreen? = nil) -> NSRect {
+    notchGeometry(screen: screen).windowFrame
 }

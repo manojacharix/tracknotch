@@ -3,13 +3,12 @@
 //  TrackNotch
 //
 //  Unified data models for multi-provider LLM usage tracking.
-//  V1 providers: Claude, ChatGPT+Codex, Cursor, Antigravity
+//  Tier 1: Local file monitors (zero auth) — Claude Code, Codex, Cursor, ChatGPT Desktop
+//  Tier 2: API keys (user pastes) — OpenAI API, Anthropic API
 //
 
 import Foundation
 import SwiftUI
-
-// MARK: - Provider
 
 // MARK: - Billing Type
 
@@ -17,78 +16,118 @@ import SwiftUI
 enum BillingType {
     case subscription  // flat plan — show quota %, reset time
     case apiToken      // pay-per-token — show $ spend, rolling arrow
+    case localUsage    // local file monitor — show token counts, no cost
 }
 
 // MARK: - Provider
 
 enum LLMProvider: String, CaseIterable, Identifiable, Codable {
-    case claude      = "claude"
-    case chatGPT     = "chatgpt"    // ChatGPT + Codex (same subscription)
-    case openAIAPI   = "openai_api" // OpenAI API (separate from ChatGPT subscription)
-    case cursor      = "cursor"
-    case antigravity = "antigravity" // Google AI plan (Plus/Pro/Ultra)
+    // Tier 1: Local file monitors (zero auth)
+    case claudeCode     = "claude_code"
+    case codex          = "codex"
+    case cursorIDE      = "cursor_ide"
+    case chatGPTDesktop = "chatgpt_desktop"
+
+    // Tier 2: API keys
+    case openAIAPI      = "openai_api"
+    case anthropicAPI   = "anthropic_api"
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .claude:       return "Claude"
-        case .chatGPT:      return "ChatGPT"
-        case .openAIAPI:    return "OpenAI API"
-        case .cursor:       return "Cursor"
-        case .antigravity:  return "Antigravity"
+        case .claudeCode:     return "Claude Code"
+        case .codex:          return "Codex"
+        case .cursorIDE:      return "Cursor"
+        case .chatGPTDesktop: return "ChatGPT Desktop"
+        case .openAIAPI:      return "OpenAI API"
+        case .anthropicAPI:   return "Anthropic API"
         }
     }
 
     var iconName: String {
         switch self {
-        case .claude:       return "claude-color"
-        case .chatGPT:      return "openai"
-        case .openAIAPI:    return "openai"
-        case .cursor:       return "cursor"
-        case .antigravity:  return "antigravity"
+        case .claudeCode:     return "claude-color"
+        case .codex:          return "codex"
+        case .cursorIDE:      return "cursor"
+        case .chatGPTDesktop: return "openai"
+        case .openAIAPI:      return "openai"
+        case .anthropicAPI:   return "claude-color"
         }
     }
 
-    /// Default billing type — can be overridden if user connects via API key
     var defaultBillingType: BillingType {
         switch self {
-        case .claude:       return .subscription
-        case .chatGPT:      return .subscription
-        case .openAIAPI:    return .apiToken
-        case .cursor:       return .subscription
-        case .antigravity:  return .subscription
+        case .claudeCode:     return .localUsage
+        case .codex:          return .localUsage
+        case .cursorIDE:      return .localUsage
+        case .chatGPTDesktop: return .localUsage
+        case .openAIAPI:      return .apiToken
+        case .anthropicAPI:   return .apiToken
         }
     }
 
     var supportTier: ProviderSupportTier {
         switch self {
-        case .claude:       return .full
-        case .chatGPT:      return .full
-        case .openAIAPI:    return .full
-        case .cursor:       return .full
-        case .antigravity:  return .partial
+        case .claudeCode:     return .full
+        case .codex:          return .full
+        case .cursorIDE:      return .full
+        case .chatGPTDesktop: return .partial
+        case .openAIAPI:      return .full
+        case .anthropicAPI:   return .full
         }
     }
 
     var accentColor: Color {
         switch self {
-        case .claude:       return Color(hex: "ff9b2f")  // orange
-        case .chatGPT:      return Color(hex: "74aa9c")  // teal/green
-        case .openAIAPI:    return Color(hex: "74aa9c")  // teal/green
-        case .cursor:       return Color(hex: "ffffff")  // white
-        case .antigravity:  return Color(hex: "4285f4")  // Google blue
+        case .claudeCode:     return Color(hex: "ff9b2f")  // orange
+        case .codex:          return Color(hex: "74aa9c")   // teal/green
+        case .cursorIDE:      return Color(hex: "ffffff")   // white
+        case .chatGPTDesktop: return Color(hex: "74aa9c")   // teal/green
+        case .openAIAPI:      return Color(hex: "74aa9c")   // teal/green
+        case .anthropicAPI:   return Color(hex: "ff9b2f")   // orange
         }
     }
 
+    /// Wing placement per Figma design:
+    /// LEFT  wing: Cursor, OpenAI API, Codex
+    /// RIGHT wing: Claude Code, Anthropic API, Antigravity, Google API
+    var notchWing: NotchWing {
+        switch self {
+        case .cursorIDE:      return .left
+        case .openAIAPI:      return .left
+        case .codex:          return .left
+        case .claudeCode:     return .right
+        case .anthropicAPI:   return .right
+        case .chatGPTDesktop: return .right   // antigravity-style, right
+        }
+    }
+
+    // Keep authMethod for connection logic
     var authMethod: ProviderAuthMethod {
         switch self {
-        case .claude:       return .sessionCookie
-        case .chatGPT:      return .sessionCookie
-        case .openAIAPI:    return .apiKey
-        case .cursor:       return .localFiles
-        case .antigravity:  return .sessionCookie
+        case .claudeCode:     return .localFiles
+        case .codex:          return .localFiles
+        case .cursorIDE:      return .localFiles
+        case .chatGPTDesktop: return .localFiles
+        case .openAIAPI:      return .apiKey
+        case .anthropicAPI:   return .apiKey
         }
+    }
+
+    /// Whether this provider is auto-detected from local files (no user action needed)
+    var isAutoDetected: Bool {
+        authMethod == .localFiles
+    }
+
+    /// Providers that require the user to paste an API key
+    static var apiKeyProviders: [LLMProvider] {
+        allCases.filter { $0.authMethod == .apiKey }
+    }
+
+    /// Providers that are auto-detected from local files
+    static var localProviders: [LLMProvider] {
+        allCases.filter { $0.authMethod == .localFiles }
     }
 }
 
@@ -99,9 +138,12 @@ enum ProviderSupportTier {
 
 enum ProviderAuthMethod {
     case apiKey
-    case sessionCookie
     case localFiles
-    case oAuth
+}
+
+enum NotchWing {
+    case left
+    case right
 }
 
 // MARK: - Usage Window
@@ -126,7 +168,7 @@ enum UsageWindow: String, Codable {
 
 struct ProviderUsage: Equatable {
     let provider: LLMProvider
-    let billingType: BillingType    // subscription or apiToken
+    let billingType: BillingType
     let window: UsageWindow
     let percentage: Double          // 0–100
     let resetsAt: Date?
@@ -136,7 +178,7 @@ struct ProviderUsage: Equatable {
     let costLimitUSD: Double?
     let modelBreakdown: [ModelUsage]
     let fetchedAt: Date
-    let isActivelyConsuming: Bool   // true when tokens flowing right now
+    let isActivelyConsuming: Bool
 
     var remaining: Double { max(0, 100 - percentage) }
 
@@ -165,6 +207,13 @@ struct ProviderUsage: Equatable {
     var formattedCost: String? {
         guard let cost = costUsedUSD else { return nil }
         return String(format: "$%.1f", cost)
+    }
+
+    var formattedTokens: String? {
+        guard let tokens = tokensUsed else { return nil }
+        if tokens >= 1_000_000 { return String(format: "%.1fM", Double(tokens) / 1_000_000) }
+        if tokens >= 1_000 { return String(format: "%.1fK", Double(tokens) / 1_000) }
+        return "\(tokens)"
     }
 
     static func empty(provider: LLMProvider) -> ProviderUsage {

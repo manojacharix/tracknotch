@@ -10,7 +10,7 @@ final class DropdownWindow: NSPanel {
     init(wingFrame: NSRect) {
         self.wingFrame = wingFrame
 
-        let dropdownWidth: CGFloat = 280
+        let dropdownWidth: CGFloat = 200
         let dropdownX = wingFrame.origin.x  // aligns with left edge of wing
         // Position below the wing (subtract height because macOS y=0 is bottom)
         let dropdownY = wingFrame.origin.y - 400
@@ -47,7 +47,7 @@ final class DropdownWindow: NSPanel {
         // Size window to fit content
         hostingView.layout()
         let fittingSize = hostingView.fittingSize
-        let w = max(fittingSize.width, 280)
+        let w = max(fittingSize.width, 200)
         let h = max(fittingSize.height, 60)
 
         let newFrame = NSRect(

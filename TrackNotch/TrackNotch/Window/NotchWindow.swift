@@ -1,22 +1,22 @@
 import AppKit
 import SwiftUI
 
-/// The slim 37pt wing window that sits permanently beside the notch.
-/// Owns a DropdownWindow child that appears/disappears below it on click.
+/// Single large panel centered on the screen top, covering the full notch + wing area.
+/// Mirrors agentnotch's NotchPanel approach.
 final class NotchWindow: NSPanel {
 
     let targetScreen: NSScreen
     let mode: NotchMode
-    private var dropdownWindow: DropdownWindow?
     private(set) var isDropdownVisible = false
+    private var dropdownWindow: DropdownWindow?
 
     init(screen: NSScreen, mode: NotchMode) {
         self.targetScreen = screen
-        self.mode = mode
+        self.mode         = mode
 
         super.init(
-            contentRect: mode.windowFrame,
-            styleMask: [.borderless, .nonactivatingPanel, .utilityWindow],
+            contentRect: notchPanelFrame(screen: screen),
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -28,24 +28,23 @@ final class NotchWindow: NSPanel {
     // MARK: - Configuration
 
     private func configure() {
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = false
-        isMovable = false
-        isReleasedWhenClosed = false
-        titleVisibility = .hidden
+        isFloatingPanel           = true
+        isOpaque                  = false
+        backgroundColor           = .clear
+        hasShadow                 = false
+        isMovable                 = false
+        isReleasedWhenClosed      = false
+        titleVisibility           = .hidden
         titlebarAppearsTransparent = true
-
-        level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.statusWindow)))
+        level                     = .mainMenu + 3
+        appearance                = NSAppearance(named: .darkAqua)
 
         collectionBehavior = [
             .canJoinAllSpaces,
             .stationary,
             .fullScreenAuxiliary,
-            .ignoresCycle
+            .ignoresCycle,
         ]
-
-        appearance = NSAppearance(named: .darkAqua)
     }
 
     private func setContent() {
@@ -54,33 +53,34 @@ final class NotchWindow: NSPanel {
         })
         .environmentObject(ProviderRegistry.shared)
         .environmentObject(AppSettings.shared)
-        .frame(width: mode.windowFrame.width, height: mode.windowFrame.height, alignment: .leading)
 
         let hostingView = NSHostingView(rootView: rootView)
-        hostingView.sizingOptions = []
-        hostingView.frame = CGRect(
-            origin: .zero,
-            size: CGSize(width: mode.windowFrame.width, height: mode.windowFrame.height)
-        )
+        hostingView.wantsLayer = true
+        hostingView.layer?.masksToBounds = false
         contentView = hostingView
+        contentView?.wantsLayer = true
+        contentView?.layer?.masksToBounds = false
     }
 
     // MARK: - Dropdown
 
     func toggleDropdown() {
-        if isDropdownVisible {
-            closeDropdown()
-        } else {
-            openDropdown()
-        }
+        isDropdownVisible ? closeDropdown() : openDropdown()
     }
 
     private func openDropdown() {
         isDropdownVisible = true
-        let dropdown = DropdownWindow(wingFrame: mode.windowFrame)
+        let sf     = targetScreen.frame
+        let dw: CGFloat = 280
+        let dh: CGFloat = 400
+        // Center dropdown under the notch
+        let dx = sf.origin.x + (sf.width - dw) / 2
+        let dy = sf.origin.y + sf.height - getNotchBlockSize(screen: targetScreen).height - dh
+
+        let dropdown = DropdownWindow(wingFrame: NSRect(x: dx, y: dy + dh, width: dw, height: 37))
         dropdown.present(onDismiss: { [weak self] in
             self?.isDropdownVisible = false
-            self?.dropdownWindow = nil
+            self?.dropdownWindow    = nil
         })
         dropdownWindow = dropdown
         addChildWindow(dropdown, ordered: .below)
@@ -89,22 +89,20 @@ final class NotchWindow: NSPanel {
     private func closeDropdown() {
         dropdownWindow?.dismissWindow(onDismiss: { [weak self] in
             self?.isDropdownVisible = false
-            self?.dropdownWindow = nil
+            self?.dropdownWindow    = nil
         })
     }
 
     // MARK: - Public
 
     func show() {
-        setFrame(mode.windowFrame, display: true)
+        setFrame(notchPanelFrame(screen: targetScreen), display: true)
         orderFrontRegardless()
-        DispatchQueue.main.async { [weak self] in
-            self?.orderFrontRegardless()
-        }
     }
 
-    // MARK: - Overrides
-
-    override var canBecomeKey: Bool { false }
+    // Must allow becoming key so SwiftUI mouse gestures (onTapGesture) receive events.
+    // nonactivatingPanel style still prevents the app from stealing foreground focus.
+    override var canBecomeKey: Bool  { true }
     override var canBecomeMain: Bool { false }
+    override var acceptsFirstResponder: Bool { true }
 }

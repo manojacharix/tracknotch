@@ -8,43 +8,63 @@
 
 /* Begin PBXBuildFile section */
 		0456BBCF33A87C9BBDD2440A /* ArrowTickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39B8567D8CA8B1BC2120FF2 /* ArrowTickerView.swift */; };
+		04CC6DD0C379B18680622E17 /* OpenAIUsageFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501987241AF4B13BD9548CD5 /* OpenAIUsageFetcher.swift */; };
 		0B3BE6F7AB8A744E42C05CEA /* ProviderModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1887D39548E5BA6421CCDE /* ProviderModels.swift */; };
+		214C0937CF2DD66F2DEE2803 /* ChatGPTDesktopMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D95C3B30EC26F34A54E0999F /* ChatGPTDesktopMonitor.swift */; };
+		2368EE8520D4EC4D8ACAAF7A /* CodexMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 856156A9648007819F8071AC /* CodexMonitor.swift */; };
 		2A41C73411A10E868BB0CAC2 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72A0E19B59A2612ADE10BA1D /* AppSettings.swift */; };
+		2D1EC2A00FB93DE39431D8BE /* NotchGlowBorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EFE822A17E2BCB71B37157A /* NotchGlowBorder.swift */; };
+		2EA02D5A4154EF147D96B3D3 /* antigravity-mono.svg in Resources */ = {isa = PBXBuildFile; fileRef = 7FAE47BF2589132EE5CF56E1 /* antigravity-mono.svg */; };
+		369ED1E392CCC9D70C9DABC1 /* ProviderAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF4EA0210E889D874E7AAD5B /* ProviderAuthManager.swift */; };
 		396E778C48EF1E900FD2DCB4 /* ProviderRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC83C0935570F2F9444BB62 /* ProviderRegistry.swift */; };
 		3D2D29DAC61AB2A1CB0029FD /* NotchRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82FA93CC51E0FC3A5989882C /* NotchRootView.swift */; };
+		44D4DE071DE28D36818B4047 /* ConnectionWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8693DC56EFB0C0F195B69726 /* ConnectionWindow.swift */; };
 		4806074868848FEAE7DC5CE7 /* BudgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC4E59AC637E884E1C5C18C0 /* BudgetModels.swift */; };
 		4E755B7A38A4C2B27AB9A053 /* openai-mono.svg in Resources */ = {isa = PBXBuildFile; fileRef = E2F4BEC99C394A6002AB460C /* openai-mono.svg */; };
+		4F12AED0BC9184B8913D56E2 /* CursorMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA6E6FB9A0DCA9E5DF76CD4F /* CursorMonitor.swift */; };
 		60F71CA6A2E21ED3AABD8357 /* NotchWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE7D8D5DA89FE486ADF4B218 /* NotchWindow.swift */; };
 		61932BFA2FC6C547E3DEF7D6 /* codex-mono.svg in Resources */ = {isa = PBXBuildFile; fileRef = 865A3620C5748C7427B6A5DA /* codex-mono.svg */; };
 		63481A891010EC66DC0A3D9C /* DropdownWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC68CFEB1C961FA6FB60D057 /* DropdownWindow.swift */; };
+		83A0909B2C307FB33ED977A5 /* claude-mono.svg in Resources */ = {isa = PBXBuildFile; fileRef = 31231A546DCEC33B5915CF2E /* claude-mono.svg */; };
 		852EA86C806542D9B8845984 /* TrackNotchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9F42D366CC7C5118C77BCC7 /* TrackNotchApp.swift */; };
 		8DDBE3044336697EEE1E383C /* google-mono.svg in Resources */ = {isa = PBXBuildFile; fileRef = 74C7AE8194D2DF8058456605 /* google-mono.svg */; };
+		8EBC2DC758848AD81AA0AEB8 /* AnthropicUsageFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309F462F2671EBD28C2AF1B3 /* AnthropicUsageFetcher.swift */; };
 		B558FBBAC1232D5CAF74D57D /* ProviderIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A2A3BFC73967367A942139C /* ProviderIconView.swift */; };
 		BBF72168B43D0F13D7872899 /* PhosphorSwift in Frameworks */ = {isa = PBXBuildFile; productRef = EBCA01764657C499EF2D0F62 /* PhosphorSwift */; };
 		BC6A915F378459C1F7421D84 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57F76FEE333C198E08C16DBA /* SettingsView.swift */; };
 		BD26BEEE56D21A1515CFC613 /* ProviderManaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 875E8A0E92BD8CF123DF95BB /* ProviderManaging.swift */; };
 		BD308B2E1E86CD4D86FE61EE /* EditModeRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E28490D7BA4B59F48CCBE9A /* EditModeRow.swift */; };
 		BDCA689234FDA1CC45CE07F4 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F82CD021E43F00C2021D404E /* AppDelegate.swift */; };
-		CB99D7F5004E23A488C8060F /* WingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0DAF8573880C5E0C678D76 /* WingView.swift */; };
+		CE1327848777DF5F805B223E /* NotchShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24077CCFB005D1BE14C4316C /* NotchShape.swift */; };
 		D3E7F27B8E569C2FA6AABB93 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 14BD1E1B5EA6315EACB1D4F9 /* Assets.xcassets */; };
+		D4182E758C4643C5D4F8BDD9 /* ClaudeCodeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0CE90F73F315B839299F173 /* ClaudeCodeMonitor.swift */; };
 		D8D7E7F91B2F9D16B33ED5CB /* DropdownPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0617F68D2C7576FCDC66B0 /* DropdownPanelView.swift */; };
 		E029ACA7B811DD9076B7CB38 /* ProviderConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC6C26B0285405FE3889855E /* ProviderConnectionView.swift */; };
 		E95F04690427E5D41DFF96BD /* DisplayCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FC79ED473A294F3FB8035B2 /* DisplayCoordinator.swift */; };
 		EB6725A39FB50A75D84F12F9 /* NotchMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = E44917DBCCE4D9F1F41EA129 /* NotchMode.swift */; };
+		F8CC3A5E2066B70082AF5402 /* cursor-mono.svg in Resources */ = {isa = PBXBuildFile; fileRef = 4757D468E8CF3A2038BAE643 /* cursor-mono.svg */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0A1887D39548E5BA6421CCDE /* ProviderModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderModels.swift; sourceTree = "<group>"; };
 		0C0617F68D2C7576FCDC66B0 /* DropdownPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropdownPanelView.swift; sourceTree = "<group>"; };
-		0D0DAF8573880C5E0C678D76 /* WingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WingView.swift; sourceTree = "<group>"; };
 		14BD1E1B5EA6315EACB1D4F9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1E28490D7BA4B59F48CCBE9A /* EditModeRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditModeRow.swift; sourceTree = "<group>"; };
+		1EFE822A17E2BCB71B37157A /* NotchGlowBorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchGlowBorder.swift; sourceTree = "<group>"; };
+		24077CCFB005D1BE14C4316C /* NotchShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchShape.swift; sourceTree = "<group>"; };
+		309F462F2671EBD28C2AF1B3 /* AnthropicUsageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnthropicUsageFetcher.swift; sourceTree = "<group>"; };
+		31231A546DCEC33B5915CF2E /* claude-mono.svg */ = {isa = PBXFileReference; path = "claude-mono.svg"; sourceTree = "<group>"; };
+		4757D468E8CF3A2038BAE643 /* cursor-mono.svg */ = {isa = PBXFileReference; path = "cursor-mono.svg"; sourceTree = "<group>"; };
+		501987241AF4B13BD9548CD5 /* OpenAIUsageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIUsageFetcher.swift; sourceTree = "<group>"; };
 		57F76FEE333C198E08C16DBA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		68C2E0093D64D1787090C569 /* TrackNotch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TrackNotch.entitlements; sourceTree = "<group>"; };
 		72A0E19B59A2612ADE10BA1D /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		74C7AE8194D2DF8058456605 /* google-mono.svg */ = {isa = PBXFileReference; path = "google-mono.svg"; sourceTree = "<group>"; };
+		7FAE47BF2589132EE5CF56E1 /* antigravity-mono.svg */ = {isa = PBXFileReference; path = "antigravity-mono.svg"; sourceTree = "<group>"; };
 		82FA93CC51E0FC3A5989882C /* NotchRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchRootView.swift; sourceTree = "<group>"; };
+		856156A9648007819F8071AC /* CodexMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexMonitor.swift; sourceTree = "<group>"; };
 		865A3620C5748C7427B6A5DA /* codex-mono.svg */ = {isa = PBXFileReference; path = "codex-mono.svg"; sourceTree = "<group>"; };
+		8693DC56EFB0C0F195B69726 /* ConnectionWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionWindow.swift; sourceTree = "<group>"; };
 		875E8A0E92BD8CF123DF95BB /* ProviderManaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderManaging.swift; sourceTree = "<group>"; };
 		8EC83C0935570F2F9444BB62 /* ProviderRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRegistry.swift; sourceTree = "<group>"; };
 		9A2A3BFC73967367A942139C /* ProviderIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderIconView.swift; sourceTree = "<group>"; };
@@ -52,14 +72,18 @@
 		A06C7C6B4FFE85EEBB113D54 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		AC4E59AC637E884E1C5C18C0 /* BudgetModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetModels.swift; sourceTree = "<group>"; };
 		B9F42D366CC7C5118C77BCC7 /* TrackNotchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackNotchApp.swift; sourceTree = "<group>"; };
+		BA6E6FB9A0DCA9E5DF76CD4F /* CursorMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorMonitor.swift; sourceTree = "<group>"; };
+		C0CE90F73F315B839299F173 /* ClaudeCodeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeMonitor.swift; sourceTree = "<group>"; };
 		CE7D8D5DA89FE486ADF4B218 /* NotchWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchWindow.swift; sourceTree = "<group>"; };
 		D6928165FA886AE9AC9F9840 /* TrackNotch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TrackNotch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D95C3B30EC26F34A54E0999F /* ChatGPTDesktopMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatGPTDesktopMonitor.swift; sourceTree = "<group>"; };
 		E2F4BEC99C394A6002AB460C /* openai-mono.svg */ = {isa = PBXFileReference; path = "openai-mono.svg"; sourceTree = "<group>"; };
 		E39B8567D8CA8B1BC2120FF2 /* ArrowTickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArrowTickerView.swift; sourceTree = "<group>"; };
 		E44917DBCCE4D9F1F41EA129 /* NotchMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchMode.swift; sourceTree = "<group>"; };
 		EC68CFEB1C961FA6FB60D057 /* DropdownWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropdownWindow.swift; sourceTree = "<group>"; };
 		F82CD021E43F00C2021D404E /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		FC6C26B0285405FE3889855E /* ProviderConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderConnectionView.swift; sourceTree = "<group>"; };
+		FF4EA0210E889D874E7AAD5B /* ProviderAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderAuthManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -74,6 +98,25 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		04DC8FCC4D743E3EEDF01CC3 /* Monitors */ = {
+			isa = PBXGroup;
+			children = (
+				D95C3B30EC26F34A54E0999F /* ChatGPTDesktopMonitor.swift */,
+				C0CE90F73F315B839299F173 /* ClaudeCodeMonitor.swift */,
+				856156A9648007819F8071AC /* CodexMonitor.swift */,
+				BA6E6FB9A0DCA9E5DF76CD4F /* CursorMonitor.swift */,
+			);
+			path = Monitors;
+			sourceTree = "<group>";
+		};
+		125EB4385577A7A93ABAB12C /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				FF4EA0210E889D874E7AAD5B /* ProviderAuthManager.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
 		1E3E7BE93B26C794A7AC913F /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -103,8 +146,11 @@
 		2AA744AF89BF161B160CD367 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				7FAE47BF2589132EE5CF56E1 /* antigravity-mono.svg */,
 				14BD1E1B5EA6315EACB1D4F9 /* Assets.xcassets */,
+				31231A546DCEC33B5915CF2E /* claude-mono.svg */,
 				865A3620C5748C7427B6A5DA /* codex-mono.svg */,
+				4757D468E8CF3A2038BAE643 /* cursor-mono.svg */,
 				74C7AE8194D2DF8058456605 /* google-mono.svg */,
 				A06C7C6B4FFE85EEBB113D54 /* Info.plist */,
 				E2F4BEC99C394A6002AB460C /* openai-mono.svg */,
@@ -141,7 +187,9 @@
 		5CA347260F32B00E333D6CF3 /* Notch */ = {
 			isa = PBXGroup;
 			children = (
+				1EFE822A17E2BCB71B37157A /* NotchGlowBorder.swift */,
 				82FA93CC51E0FC3A5989882C /* NotchRootView.swift */,
+				24077CCFB005D1BE14C4316C /* NotchShape.swift */,
 			);
 			path = Notch;
 			sourceTree = "<group>";
@@ -149,6 +197,8 @@
 		5CBE33602A6C5513D1A1EE35 /* Providers */ = {
 			isa = PBXGroup;
 			children = (
+				309F462F2671EBD28C2AF1B3 /* AnthropicUsageFetcher.swift */,
+				501987241AF4B13BD9548CD5 /* OpenAIUsageFetcher.swift */,
 				875E8A0E92BD8CF123DF95BB /* ProviderManaging.swift */,
 				8EC83C0935570F2F9444BB62 /* ProviderRegistry.swift */,
 			);
@@ -166,6 +216,7 @@
 		72FE73A270ABD7CB0E50DEF5 /* Window */ = {
 			isa = PBXGroup;
 			children = (
+				8693DC56EFB0C0F195B69726 /* ConnectionWindow.swift */,
 				EC68CFEB1C961FA6FB60D057 /* DropdownWindow.swift */,
 				CE7D8D5DA89FE486ADF4B218 /* NotchWindow.swift */,
 			);
@@ -193,7 +244,9 @@
 		BF7124296430FD3F0A61F355 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				125EB4385577A7A93ABAB12C /* Auth */,
 				201B7FC6B2C20678C3FF6138 /* Display */,
+				04DC8FCC4D743E3EEDF01CC3 /* Monitors */,
 				5CBE33602A6C5513D1A1EE35 /* Providers */,
 				FEB549CECFB28A549F9D57E5 /* Settings */,
 			);
@@ -205,7 +258,6 @@
 			children = (
 				E39B8567D8CA8B1BC2120FF2 /* ArrowTickerView.swift */,
 				9A2A3BFC73967367A942139C /* ProviderIconView.swift */,
-				0D0DAF8573880C5E0C678D76 /* WingView.swift */,
 			);
 			path = Wing;
 			sourceTree = "<group>";
@@ -284,7 +336,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				D3E7F27B8E569C2FA6AABB93 /* Assets.xcassets in Resources */,
+				2EA02D5A4154EF147D96B3D3 /* antigravity-mono.svg in Resources */,
+				83A0909B2C307FB33ED977A5 /* claude-mono.svg in Resources */,
 				61932BFA2FC6C547E3DEF7D6 /* codex-mono.svg in Resources */,
+				F8CC3A5E2066B70082AF5402 /* cursor-mono.svg in Resources */,
 				8DDBE3044336697EEE1E383C /* google-mono.svg in Resources */,
 				4E755B7A38A4C2B27AB9A053 /* openai-mono.svg in Resources */,
 			);
@@ -297,17 +352,27 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8EBC2DC758848AD81AA0AEB8 /* AnthropicUsageFetcher.swift in Sources */,
 				BDCA689234FDA1CC45CE07F4 /* AppDelegate.swift in Sources */,
 				2A41C73411A10E868BB0CAC2 /* AppSettings.swift in Sources */,
 				0456BBCF33A87C9BBDD2440A /* ArrowTickerView.swift in Sources */,
 				4806074868848FEAE7DC5CE7 /* BudgetModels.swift in Sources */,
+				214C0937CF2DD66F2DEE2803 /* ChatGPTDesktopMonitor.swift in Sources */,
+				D4182E758C4643C5D4F8BDD9 /* ClaudeCodeMonitor.swift in Sources */,
+				2368EE8520D4EC4D8ACAAF7A /* CodexMonitor.swift in Sources */,
+				44D4DE071DE28D36818B4047 /* ConnectionWindow.swift in Sources */,
+				4F12AED0BC9184B8913D56E2 /* CursorMonitor.swift in Sources */,
 				E95F04690427E5D41DFF96BD /* DisplayCoordinator.swift in Sources */,
 				D8D7E7F91B2F9D16B33ED5CB /* DropdownPanelView.swift in Sources */,
 				63481A891010EC66DC0A3D9C /* DropdownWindow.swift in Sources */,
 				BD308B2E1E86CD4D86FE61EE /* EditModeRow.swift in Sources */,
+				2D1EC2A00FB93DE39431D8BE /* NotchGlowBorder.swift in Sources */,
 				EB6725A39FB50A75D84F12F9 /* NotchMode.swift in Sources */,
 				3D2D29DAC61AB2A1CB0029FD /* NotchRootView.swift in Sources */,
+				CE1327848777DF5F805B223E /* NotchShape.swift in Sources */,
 				60F71CA6A2E21ED3AABD8357 /* NotchWindow.swift in Sources */,
+				04CC6DD0C379B18680622E17 /* OpenAIUsageFetcher.swift in Sources */,
+				369ED1E392CCC9D70C9DABC1 /* ProviderAuthManager.swift in Sources */,
 				E029ACA7B811DD9076B7CB38 /* ProviderConnectionView.swift in Sources */,
 				B558FBBAC1232D5CAF74D57D /* ProviderIconView.swift in Sources */,
 				BD26BEEE56D21A1515CFC613 /* ProviderManaging.swift in Sources */,
@@ -315,7 +380,6 @@
 				396E778C48EF1E900FD2DCB4 /* ProviderRegistry.swift in Sources */,
 				BC6A915F378459C1F7421D84 /* SettingsView.swift in Sources */,
 				852EA86C806542D9B8845984 /* TrackNotchApp.swift in Sources */,
-				CB99D7F5004E23A488C8060F /* WingView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

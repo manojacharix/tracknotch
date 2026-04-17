@@ -30,7 +30,7 @@ final class BudgetManager: ObservableObject {
     }
 
     func setLimit(_ usd: Double, for provider: LLMProvider) {
-        var c = config(for: provider)
+        let c = config(for: provider)
         configs[provider] = BudgetConfig(
             provider: provider,
             limitUSD: usd,
