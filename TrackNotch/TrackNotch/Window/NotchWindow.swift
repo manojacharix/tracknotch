@@ -54,6 +54,7 @@ final class NotchWindow: NSPanel {
     private(set) var isDropdownVisible = false
     private var dropdownWindow: DropdownWindow?
     private var stripPanel: StripPanel?
+    private var externalClickMonitor: Any?
 
     init(screen: NSScreen, mode: NotchMode) {
         self.targetScreen = screen
@@ -73,9 +74,7 @@ final class NotchWindow: NSPanel {
         configure()
         setContent()
         if mode.isExternal {
-            // External monitor: small centered panel — allow mouse events directly
-            // so the dot/pill tap gesture works without a separate strip panel.
-            ignoresMouseEvents = false
+            installExternalClickMonitor()
         } else {
             installStripPanel()
         }
@@ -109,10 +108,10 @@ final class NotchWindow: NSPanel {
         let hostingView: NSHostingView<AnyView>
 
         if mode.isExternal {
-            // External: window receives clicks directly, no allowsHitTesting(false)
             let view = AnyView(
-                ExternalMonitorView(onToggleDropdown: { [weak self] in self?.toggleDropdown() })
+                ExternalMonitorView()
                     .environmentObject(ProviderRegistry.shared)
+                    .allowsHitTesting(false)
             )
             hostingView = NSHostingView(rootView: view)
         } else {
@@ -132,6 +131,22 @@ final class NotchWindow: NSPanel {
         contentView?.layer?.masksToBounds = false
     }
 
+    /// For external monitor mode: global monitor checks if click lands in the pill rect.
+    /// The window stays fully click-through; we just observe and react.
+    private func installExternalClickMonitor() {
+        externalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let self, let cg = event.cgEvent else { return }
+            let pt = NSPoint(x: cg.location.x, y: cg.location.y)
+            guard self.frame.contains(pt) else { return }
+            // Only toggle if providers are active (pill is visible)
+            guard !ProviderRegistry.shared.activeProviders.isEmpty else { return }
+            DispatchQueue.main.async {
+                self.haptic()
+                self.toggleDropdown()
+            }
+        }
+    }
+
     private func installStripPanel() {
         let strip = StripPanel(frame: stripRect)
         strip.onNotchClick = { [weak self] in
@@ -145,6 +160,7 @@ final class NotchWindow: NSPanel {
     override func close() {
         stripPanel?.close()
         stripPanel = nil
+        if let m = externalClickMonitor { NSEvent.removeMonitor(m); externalClickMonitor = nil }
         closeDropdown()
         super.close()
     }

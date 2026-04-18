@@ -16,8 +16,6 @@ private let cornerRadius: CGFloat = 16
 private let staggerStep:  Double  = 0.06
 
 struct ExternalMonitorView: View {
-    let onToggleDropdown: () -> Void
-
     @EnvironmentObject var registry: ProviderRegistry
 
     private var activeProviders: [LLMProvider] { registry.activeProviders }
@@ -65,7 +63,6 @@ struct ExternalMonitorView: View {
                             .animation(.spring(response: 0.32, dampingFraction: 0.82))
                     )
                 )
-                .onTapGesture { onToggleDropdown() }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .padding(.top, (externalPanelHeight - pillHeight) / 2)
                 .animation(.spring(response: 0.42, dampingFraction: 0.8), value: activeProviders.count)
