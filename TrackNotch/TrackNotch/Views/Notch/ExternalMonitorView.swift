@@ -94,10 +94,10 @@ struct ExternalMonitorView: View {
             WingIconView(usage: usage)
                 .transition(
                     .asymmetric(
-                        insertion: .scale(scale: 0.3).combined(with: .opacity)
-                            .animation(.spring(response: 0.35, dampingFraction: 0.72)
+                        insertion: .move(edge: provider.notchWing == .left ? .trailing : .leading).combined(with: .opacity)
+                            .animation(.spring(response: 0.38, dampingFraction: 0.78)
                                 .delay(Double(outerIdx) * staggerStep)),
-                        removal: .scale(scale: 0.3).combined(with: .opacity)
+                        removal: .move(edge: provider.notchWing == .left ? .trailing : .leading).combined(with: .opacity)
                             .animation(.spring(response: 0.55, dampingFraction: 0.85)
                                 .delay(Double(outerIdx) * staggerStep))
                     )

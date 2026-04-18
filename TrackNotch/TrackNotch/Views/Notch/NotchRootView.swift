@@ -101,10 +101,10 @@ struct NotchRootView: View {
                             WingIconView(usage: usage)
                                 .transition(
                                     .asymmetric(
-                                        insertion: .scale(scale: 0.5).combined(with: .opacity)
-                                            .animation(.spring(response: 0.35, dampingFraction: 0.75)
+                                        insertion: .move(edge: .leading).combined(with: .opacity)
+                                            .animation(.spring(response: 0.38, dampingFraction: 0.78)
                                                 .delay(Double(idx) * staggerStep)),
-                                        removal: .scale(scale: 0.5).combined(with: .opacity)
+                                        removal: .move(edge: .leading).combined(with: .opacity)
                                             .animation(.spring(response: 0.3, dampingFraction: 0.8)
                                                 .delay(Double(idx) * staggerStep))
                                     )
@@ -130,10 +130,10 @@ struct NotchRootView: View {
                             WingIconView(usage: usage)
                                 .transition(
                                     .asymmetric(
-                                        insertion: .scale(scale: 0.5).combined(with: .opacity)
-                                            .animation(.spring(response: 0.35, dampingFraction: 0.75)
+                                        insertion: .move(edge: .trailing).combined(with: .opacity)
+                                            .animation(.spring(response: 0.38, dampingFraction: 0.78)
                                                 .delay(Double(outerIdx) * staggerStep)),
-                                        removal: .scale(scale: 0.5).combined(with: .opacity)
+                                        removal: .move(edge: .trailing).combined(with: .opacity)
                                             .animation(.spring(response: 0.3, dampingFraction: 0.8)
                                                 .delay(Double(outerIdx) * staggerStep))
                                     )
