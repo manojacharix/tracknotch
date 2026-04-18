@@ -60,7 +60,7 @@ struct ExternalMonitorView: View {
                         insertion: .scale(scale: 0.4).combined(with: .opacity)
                             .animation(.spring(response: 0.38, dampingFraction: 0.75)),
                         removal: .scale(scale: 0.4).combined(with: .opacity)
-                            .animation(.spring(response: 0.32, dampingFraction: 0.82))
+                            .animation(.spring(response: 0.6, dampingFraction: 0.88))
                     )
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -98,7 +98,7 @@ struct ExternalMonitorView: View {
                             .animation(.spring(response: 0.35, dampingFraction: 0.72)
                                 .delay(Double(outerIdx) * staggerStep)),
                         removal: .scale(scale: 0.3).combined(with: .opacity)
-                            .animation(.spring(response: 0.28, dampingFraction: 0.8)
+                            .animation(.spring(response: 0.55, dampingFraction: 0.85)
                                 .delay(Double(outerIdx) * staggerStep))
                     )
                 )
