@@ -8,7 +8,6 @@ import SwiftUI
 //   Collapse→ icons sequence inward, pill shrinks back to dot, dot fades
 
 private let dotSize:      CGFloat = 6
-private let dotIdleOpacity: Double = 0.25
 private let iconSize:     CGFloat = 22
 private let iconGap:      CGFloat = 8
 private let sidePadding:  CGFloat = 10
@@ -48,26 +47,29 @@ struct ExternalMonitorView: View {
                 .frame(width: externalPanelWidth, height: externalPanelHeight)
                 .allowsHitTesting(false)
 
-            // Pill / dot
-            ZStack {
-                // Background
-                RoundedRectangle(cornerRadius: hasActivity ? cornerRadius : dotSize / 2)
-                    .fill(Color.black)
-                    .frame(width: pillWidth, height: hasActivity ? pillHeight : dotSize)
+            // Only render when active — fully invisible when idle
+            if hasActivity {
+                ZStack {
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .fill(Color.black)
+                        .frame(width: pillWidth, height: pillHeight)
 
-                // Icons fan out from center
-                if hasActivity {
                     iconsView
                 }
+                .shadow(color: .black.opacity(0.4), radius: 6)
+                .transition(
+                    .asymmetric(
+                        insertion: .scale(scale: 0.4).combined(with: .opacity)
+                            .animation(.spring(response: 0.38, dampingFraction: 0.75)),
+                        removal: .scale(scale: 0.4).combined(with: .opacity)
+                            .animation(.spring(response: 0.32, dampingFraction: 0.82))
+                    )
+                )
+                .onTapGesture { onToggleDropdown() }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, (externalPanelHeight - pillHeight) / 2)
+                .animation(.spring(response: 0.42, dampingFraction: 0.8), value: activeProviders.count)
             }
-            .shadow(color: .black.opacity(0.4), radius: 6)
-            .opacity(hasActivity ? 1 : dotIdleOpacity)
-            .animation(.spring(response: 0.42, dampingFraction: 0.8), value: hasActivity)
-            .animation(.spring(response: 0.42, dampingFraction: 0.8), value: activeProviders.count)
-            .onTapGesture { onToggleDropdown() }
-            // Position at top-center of the panel
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(.top, (externalPanelHeight - pillHeight) / 2)
         }
     }
 
