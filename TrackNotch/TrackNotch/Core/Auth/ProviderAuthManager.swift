@@ -17,7 +17,7 @@ final class ProviderAuthManager: ObservableObject {
 
     func saveAPIKey(_ value: String, for provider: LLMProvider) {
         let key = keychainKey(for: provider)
-        let data = value.data(using: .utf8)!
+        guard let data = value.data(using: .utf8) else { return }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,

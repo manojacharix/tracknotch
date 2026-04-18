@@ -146,6 +146,10 @@ final class ProviderRegistry: ObservableObject {
     // MARK: - Usage Updates
 
     func updateUsage(_ usage: ProviderUsage) {
+        // If usage dropped significantly vs last reading, the window reset — clear fired alerts
+        if let prev = usageMap[usage.provider], usage.percentage < prev.percentage - 20 {
+            BudgetManager.shared.resetAlerts(for: usage.provider)
+        }
         usageMap[usage.provider] = usage
         manageLingerTimer(for: usage.provider, isActive: usage.isActivelyConsuming)
     }

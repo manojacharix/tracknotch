@@ -11,13 +11,11 @@ struct NotchRootView: View {
 
     @EnvironmentObject var registry: ProviderRegistry
     @State private var geo: NotchGeometry? = nil
-    @State private var showGlow = false
 
     // LEFT wing: Cursor, OpenAI API, Codex
     private var leftProviders:  [LLMProvider] { registry.activeProviders.filter { $0.notchWing == .left } }
     // RIGHT wing: Claude Code, Anthropic API, ChatGPT, Google
     private var rightProviders: [LLMProvider] { registry.activeProviders.filter { $0.notchWing == .right } }
-    private var hasActivity: Bool { !registry.activeProviders.isEmpty }
 
     // Wing width = exactly enough for n icons with accurate edge paddings, 0 when empty
     private func wingWidth(count: Int) -> CGFloat {
@@ -55,16 +53,7 @@ struct NotchRootView: View {
         .onAppear {
             Task { @MainActor in
                 geo = notchGeometry()
-                showGlow = true
-                try? await Task.sleep(for: .seconds(3))
-                withAnimation(.easeOut(duration: 0.4)) { showGlow = false }
             }
-        }
-        .onChange(of: registry.usageMap) { _ in
-            withAnimation(.easeIn(duration: 0.2)) { showGlow = hasActivity }
-        }
-        .onChange(of: registry.activeProviders.count) { _ in
-            withAnimation(.easeIn(duration: 0.2)) { showGlow = hasActivity }
         }
     }
 
@@ -79,21 +68,6 @@ struct NotchRootView: View {
             NotchShape(topCornerRadius: 6, bottomCornerRadius: 14)
                 .fill(Color.black)
                 .frame(width: pillWidth, height: pillHeight)
-                .overlay {
-                    // Subtle white rim always visible so user can locate the pill
-                    NotchShape(topCornerRadius: 6, bottomCornerRadius: 14)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                }
-                .overlay {
-                    if showGlow {
-                        NotchGlowBorder(
-                            topCornerRadius: 6,
-                            bottomCornerRadius: 14,
-                            glowColor:   Color(red: 0.9, green: 0.4, blue: 0.1),
-                            brightColor: Color(red: 1.0, green: 0.55, blue: 0.2)
-                        )
-                    }
-                }
                 .shadow(color: .black.opacity(0.5), radius: 8)
 
             // Icons — vertically centered inside the pill's height

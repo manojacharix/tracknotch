@@ -57,7 +57,9 @@ struct NotchGeometry {
 /// Compute the full panel frame and wing widths from screen geometry.
 @MainActor
 func notchGeometry(screen: NSScreen? = nil) -> NotchGeometry {
-    let s = screen ?? NSScreen.main ?? NSScreen.screens[0]
+    guard let s = screen ?? NSScreen.main ?? NSScreen.screens.first else {
+        return NotchGeometry(windowFrame: .zero, leftWingWidth: 0, notchWidth: 208, rightWingWidth: 0, notchHeight: 37)
+    }
     let sf = s.frame
 
     // Physical notch block

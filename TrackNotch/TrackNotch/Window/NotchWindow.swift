@@ -122,6 +122,13 @@ final class NotchWindow: NSPanel {
         stripPanel = strip
     }
 
+    override func close() {
+        stripPanel?.close()
+        stripPanel = nil
+        closeDropdown()
+        super.close()
+    }
+
     // MARK: - Strip rect (screen coordinates, notch height only)
 
     private var stripRect: NSRect {

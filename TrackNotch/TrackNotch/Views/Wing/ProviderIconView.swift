@@ -57,12 +57,14 @@ struct WingIconView: View {
     }
 
     private func startPulse() {
+        guard !pulsing else { return }   // already pulsing — don't stack animations
         withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
             pulsing = true
         }
     }
 
     private func stopPulse() {
+        guard pulsing else { return }
         withAnimation(.easeOut(duration: 0.3)) { pulsing = false }
     }
 }
