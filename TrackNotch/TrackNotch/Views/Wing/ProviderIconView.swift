@@ -35,9 +35,9 @@ struct WingIconView: View {
                 .trim(from: 0, to: trimFraction)
                 .stroke(
                     arcColor.opacity(isDepleted && pulsing ? 0.35 : 1.0),
-                    style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                    style: StrokeStyle(lineWidth: 3.5, lineCap: .round)
                 )
-                .frame(width: 19, height: 19)
+                .frame(width: 18, height: 18)
                 .rotationEffect(.degrees(-90))   // start at 12 o'clock
 
             // Provider icon — rendered as template (declared in asset catalog)
