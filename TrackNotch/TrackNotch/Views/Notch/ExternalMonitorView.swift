@@ -12,7 +12,7 @@ private let iconSize:     CGFloat = 22
 private let iconGap:      CGFloat = 8
 private let sidePadding:  CGFloat = 10
 private let pillHeight:   CGFloat = 32
-private let cornerRadius: CGFloat = 16
+private let pillCornerRadius: CGFloat = 16
 private let staggerStep:  Double  = 0.06
 
 struct ExternalMonitorView: View {
@@ -48,7 +48,7 @@ struct ExternalMonitorView: View {
             // Only render when active — fully invisible when idle
             if hasActivity {
                 ZStack {
-                    RoundedRectangle(cornerRadius: cornerRadius)
+                    RoundedRectangle(cornerRadius: pillCornerRadius)
                         .fill(Color.black)
                         .frame(width: pillWidth, height: pillHeight)
 
