@@ -76,25 +76,39 @@ struct NotchRootView: View {
         }
         .frame(width: pillWidth, height: pillHeight)
         .offset(x: pillLeadingOffset)
-        // Animate pill expand/collapse whenever active providers change
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: leftProviders.count)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: rightProviders.count)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: registry.usageMap)
+        // Pill resizes to follow icons with a slightly slower spring so it trails behind them
+        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: leftProviders.count)
+        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: rightProviders.count)
     }
 
     // MARK: - Wing content
 
+    /// Stagger delay: outermost icon animates first, inward toward the notch.
+    /// Left wing: index 0 is outermost (leftmost) — delay increases right→notch.
+    /// Right wing: index 0 is innermost (closest to notch) — delay increases left→notch,
+    ///             so we reverse: last icon (outermost) gets delay 0.
+    private let staggerStep: Double = 0.06
+
     @ViewBuilder
     private func wingContent(geo: NotchGeometry) -> some View {
         HStack(spacing: 0) {
-            // LEFT wing — icons trailing-aligned, vertically centered
+            // LEFT wing — icons trailing-aligned, outermost = index 0
             if !leftProviders.isEmpty {
                 HStack(spacing: iconGap) {
                     Spacer(minLength: 0)
-                    ForEach(leftProviders, id: \.self) { provider in
+                    ForEach(Array(leftProviders.enumerated()), id: \.element) { idx, provider in
                         if let usage = registry.usageMap[provider] {
                             WingIconView(usage: usage)
-                                .transition(.scale.combined(with: .opacity))
+                                .transition(
+                                    .asymmetric(
+                                        insertion: .scale(scale: 0.5).combined(with: .opacity)
+                                            .animation(.spring(response: 0.35, dampingFraction: 0.75)
+                                                .delay(Double(idx) * staggerStep)),
+                                        removal: .scale(scale: 0.5).combined(with: .opacity)
+                                            .animation(.spring(response: 0.3, dampingFraction: 0.8)
+                                                .delay(Double(idx) * staggerStep))
+                                    )
+                                )
                         }
                     }
                 }
@@ -107,13 +121,23 @@ struct NotchRootView: View {
             Color.clear
                 .frame(width: geo.notchWidth, height: pillHeight)
 
-            // RIGHT wing — icons leading-aligned, vertically centered
+            // RIGHT wing — icons leading-aligned, outermost = last index
             if !rightProviders.isEmpty {
                 HStack(spacing: iconGap) {
-                    ForEach(rightProviders, id: \.self) { provider in
+                    ForEach(Array(rightProviders.enumerated()), id: \.element) { idx, provider in
                         if let usage = registry.usageMap[provider] {
+                            let outerIdx = rightProviders.count - 1 - idx  // 0 = outermost
                             WingIconView(usage: usage)
-                                .transition(.scale.combined(with: .opacity))
+                                .transition(
+                                    .asymmetric(
+                                        insertion: .scale(scale: 0.5).combined(with: .opacity)
+                                            .animation(.spring(response: 0.35, dampingFraction: 0.75)
+                                                .delay(Double(outerIdx) * staggerStep)),
+                                        removal: .scale(scale: 0.5).combined(with: .opacity)
+                                            .animation(.spring(response: 0.3, dampingFraction: 0.8)
+                                                .delay(Double(outerIdx) * staggerStep))
+                                    )
+                                )
                         }
                     }
                     Spacer(minLength: 0)
