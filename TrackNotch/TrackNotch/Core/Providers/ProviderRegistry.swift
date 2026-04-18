@@ -23,6 +23,12 @@ final class ProviderRegistry: ObservableObject {
     private static let orderKey = "providerOrder"
     private var cancellables = Set<AnyCancellable>()
 
+    /// Linger timers: keep a provider visible for 2s after it stops actively consuming,
+    /// smoothing over the 1s poll gap so icons don't flicker in and out.
+    private static let lingerDuration: TimeInterval = 2
+    private var lingerTimers: [LLMProvider: Timer] = [:]
+    @Published private var lingering: Set<LLMProvider> = []
+
     private init() {
         loadProviderOrder()
         requestNotificationPermission()
@@ -109,11 +115,11 @@ final class ProviderRegistry: ObservableObject {
 
     // MARK: - Active Providers (for wing display)
 
-    /// Only providers that are actively consuming tokens right now (shown in pill)
+    /// Providers actively consuming OR still within the 2s linger window after going idle.
     var activeProviders: [LLMProvider] {
         orderedProviders.filter { provider in
             guard let usage = usageMap[provider] else { return false }
-            return usage.isActivelyConsuming
+            return usage.isActivelyConsuming || lingering.contains(provider)
         }
     }
 
@@ -141,6 +147,26 @@ final class ProviderRegistry: ObservableObject {
 
     func updateUsage(_ usage: ProviderUsage) {
         usageMap[usage.provider] = usage
+        manageLingerTimer(for: usage.provider, isActive: usage.isActivelyConsuming)
+    }
+
+    private func manageLingerTimer(for provider: LLMProvider, isActive: Bool) {
+        if isActive {
+            // Cancel any pending removal — provider is active again
+            lingerTimers[provider]?.invalidate()
+            lingerTimers[provider] = nil
+            lingering.remove(provider)
+        } else if !lingering.contains(provider) {
+            // Not active and not already lingering — start linger window
+            lingering.insert(provider)
+            let timer = Timer.scheduledTimer(withTimeInterval: Self.lingerDuration, repeats: false) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.lingering.remove(provider)
+                    self?.lingerTimers[provider] = nil
+                }
+            }
+            lingerTimers[provider] = timer
+        }
     }
 
     func updateConnectionState(_ state: ProviderConnectionState, for provider: LLMProvider) {

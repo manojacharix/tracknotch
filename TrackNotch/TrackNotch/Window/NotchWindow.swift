@@ -1,14 +1,59 @@
 import AppKit
 import SwiftUI
 
-/// Single large panel centered on the screen top, covering the full notch + wing area.
-/// Mirrors agentnotch's NotchPanel approach.
+// MARK: - Strip click panel
+
+/// Invisible panel sized exactly to the notch strip. Receives clicks and passes
+/// everything else through. No Accessibility permission needed.
+private final class StripPanel: NSPanel {
+
+    var onNotchClick: (() -> Void)?
+
+    init(frame: NSRect) {
+        super.init(
+            contentRect: frame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        isOpaque             = false
+        backgroundColor      = .clear
+        hasShadow            = false
+        isMovable            = false
+        isReleasedWhenClosed = false
+        level                = .mainMenu + 3
+        ignoresMouseEvents   = false
+        collectionBehavior   = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        contentView          = StripView()
+        (contentView as? StripView)?.onNotchClick = { [weak self] in self?.onNotchClick?() }
+    }
+
+    override var canBecomeKey: Bool  { false }
+    override var canBecomeMain: Bool { false }
+}
+
+private final class StripView: NSView {
+    var onNotchClick: (() -> Void)?
+
+    override func mouseUp(with event: NSEvent) { onNotchClick?() }
+    override var acceptsFirstResponder: Bool   { true }
+    override var mouseDownCanMoveWindow: Bool  { false }
+
+    // Accept every point — the window is already strip-sized
+    override func hitTest(_ point: NSPoint) -> NSView? { self }
+}
+
+// MARK: - NotchWindow
+
+/// Large panel covering the full notch + wing area — display only, fully click-through.
+/// A separate StripPanel (notch-height only) sits on top to receive clicks.
 final class NotchWindow: NSPanel {
 
     let targetScreen: NSScreen
     let mode: NotchMode
     private(set) var isDropdownVisible = false
     private var dropdownWindow: DropdownWindow?
+    private var stripPanel: StripPanel?
 
     init(screen: NSScreen, mode: NotchMode) {
         self.targetScreen = screen
@@ -23,21 +68,24 @@ final class NotchWindow: NSPanel {
 
         configure()
         setContent()
+        installStripPanel()
     }
 
     // MARK: - Configuration
 
     private func configure() {
-        isFloatingPanel           = true
-        isOpaque                  = false
-        backgroundColor           = .clear
-        hasShadow                 = false
-        isMovable                 = false
-        isReleasedWhenClosed      = false
-        titleVisibility           = .hidden
+        isFloatingPanel            = true
+        isOpaque                   = false
+        backgroundColor            = .clear
+        hasShadow                  = false
+        isMovable                  = false
+        isReleasedWhenClosed       = false
+        titleVisibility            = .hidden
         titlebarAppearsTransparent = true
-        level                     = .mainMenu + 3
-        appearance                = NSAppearance(named: .darkAqua)
+        level                      = .mainMenu + 3
+        appearance                 = NSAppearance(named: .darkAqua)
+        acceptsMouseMovedEvents    = false
+        ignoresMouseEvents         = true   // render-only; StripPanel handles clicks
 
         collectionBehavior = [
             .canJoinAllSpaces,
@@ -53,13 +101,47 @@ final class NotchWindow: NSPanel {
         })
         .environmentObject(ProviderRegistry.shared)
         .environmentObject(AppSettings.shared)
+        .allowsHitTesting(false)
 
         let hostingView = NSHostingView(rootView: rootView)
         hostingView.wantsLayer = true
         hostingView.layer?.masksToBounds = false
+
         contentView = hostingView
         contentView?.wantsLayer = true
         contentView?.layer?.masksToBounds = false
+    }
+
+    private func installStripPanel() {
+        let strip = StripPanel(frame: stripRect)
+        strip.onNotchClick = { [weak self] in
+            self?.haptic()
+            self?.toggleDropdown()
+        }
+        strip.orderFrontRegardless()
+        stripPanel = strip
+    }
+
+    // MARK: - Strip rect (screen coordinates, notch height only)
+
+    private var stripRect: NSRect {
+        let sf          = targetScreen.frame
+        let stripHeight = getNotchBlockSize(screen: targetScreen).height + 4
+        return NSRect(
+            x: frame.origin.x,
+            y: sf.origin.y + sf.height - stripHeight,
+            width: frame.width,
+            height: stripHeight
+        )
+    }
+
+    // MARK: - Haptic
+
+    private func haptic() {
+        NSHapticFeedbackManager.defaultPerformer.perform(
+            .levelChange,
+            performanceTime: .now
+        )
     }
 
     // MARK: - Dropdown
@@ -70,10 +152,9 @@ final class NotchWindow: NSPanel {
 
     private func openDropdown() {
         isDropdownVisible = true
-        let sf     = targetScreen.frame
+        let sf    = targetScreen.frame
         let dw: CGFloat = 280
         let dh: CGFloat = 400
-        // Center dropdown under the notch
         let dx = sf.origin.x + (sf.width - dw) / 2
         let dy = sf.origin.y + sf.height - getNotchBlockSize(screen: targetScreen).height - dh
 
@@ -97,12 +178,12 @@ final class NotchWindow: NSPanel {
 
     func show() {
         setFrame(notchPanelFrame(screen: targetScreen), display: true)
+        stripPanel?.setFrame(stripRect, display: true)
         orderFrontRegardless()
+        stripPanel?.orderFrontRegardless()
     }
 
-    // Must allow becoming key so SwiftUI mouse gestures (onTapGesture) receive events.
-    // nonactivatingPanel style still prevents the app from stealing foreground focus.
-    override var canBecomeKey: Bool  { true }
-    override var canBecomeMain: Bool { false }
-    override var acceptsFirstResponder: Bool { true }
+    override var canBecomeKey: Bool          { false }
+    override var canBecomeMain: Bool         { false }
+    override var acceptsFirstResponder: Bool { false }
 }

@@ -1,5 +1,28 @@
 import SwiftUI
 
+// MARK: - Usage arc (used in dropdown rows as a mini progress indicator)
+
+/// Partial arc — shared between the dropdown and any future wing views.
+struct UsageArc: View {
+    let percentage: Double
+    let color: Color
+
+    private var trimFraction: Double {
+        let clamped = max(0.0, min(percentage, 100.0))
+        if clamped < 1 { return 0.04 }
+        return clamped / 100.0
+    }
+
+    var body: some View {
+        Circle()
+            .trim(from: 0, to: trimFraction)
+            .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            .rotationEffect(.degrees(-60))
+    }
+}
+
+// MARK: - Arrow ticker
+
 /// Upward-rolling arrow ticker shown beside API token providers in the wing.
 /// Animates continuously upward every 1 second while tokens are being consumed.
 struct ArrowTickerView: View {

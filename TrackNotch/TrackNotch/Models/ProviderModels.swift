@@ -50,7 +50,7 @@ enum LLMProvider: String, CaseIterable, Identifiable, Codable {
         case .claudeCode:     return "claude-color"
         case .codex:          return "codex"
         case .cursorIDE:      return "cursor"
-        case .chatGPTDesktop: return "openai"
+        case .chatGPTDesktop: return "antigravity"
         case .openAIAPI:      return "openai"
         case .anthropicAPI:   return "claude-color"
         }

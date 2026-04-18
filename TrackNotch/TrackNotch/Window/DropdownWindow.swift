@@ -6,13 +6,13 @@ import SwiftUI
 final class DropdownWindow: NSPanel {
 
     private let wingFrame: NSRect
+    private var globalMonitor: Any?
 
     init(wingFrame: NSRect) {
         self.wingFrame = wingFrame
 
         let dropdownWidth: CGFloat = 200
-        let dropdownX = wingFrame.origin.x  // aligns with left edge of wing
-        // Position below the wing (subtract height because macOS y=0 is bottom)
+        let dropdownX = wingFrame.origin.x
         let dropdownY = wingFrame.origin.y - 400
 
         super.init(
@@ -26,14 +26,14 @@ final class DropdownWindow: NSPanel {
     }
 
     private func configure() {
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        isMovable = false
+        isOpaque             = false
+        backgroundColor      = .clear
+        hasShadow            = true
+        isMovable            = false
         isReleasedWhenClosed = false
-        level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.statusWindow)) - 1)
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
-        appearance = NSAppearance(named: .darkAqua)
+        level                = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.statusWindow)) - 1)
+        collectionBehavior   = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        appearance           = NSAppearance(named: .darkAqua)
     }
 
     func present(onDismiss: @escaping () -> Void) {
@@ -44,7 +44,6 @@ final class DropdownWindow: NSPanel {
         hostingView.sizingOptions = []
         contentView = hostingView
 
-        // Size window to fit content
         hostingView.layout()
         let fittingSize = hostingView.fittingSize
         let w = max(fittingSize.width, 200)
@@ -61,19 +60,40 @@ final class DropdownWindow: NSPanel {
 
         orderFrontRegardless()
 
-        // Dismiss on click outside
-        NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.dismissWindow(onDismiss: onDismiss)
+        // Dismiss when user clicks outside both the dropdown AND the notch pill area.
+        // The notch pill click is handled by NotchWindow.mouseUp which will close via toggleDropdown().
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self else { return }
+            // Use NSScreen coordinate: event.cgEvent?.location gives screen coords
+            let screenPt = event.cgEvent.map { NSPoint(x: $0.location.x, y: $0.location.y) }
+                           ?? NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y)
+
+            // If click is inside the dropdown frame, let it pass through (interactive)
+            if self.frame.contains(screenPt) { return }
+
+            // If click is inside the notch pill (wingFrame), let NotchWindow handle toggle
+            let notchRect = NSRect(
+                x: self.wingFrame.origin.x,
+                y: self.wingFrame.origin.y,
+                width: self.wingFrame.width,
+                height: self.wingFrame.height
+            )
+            if notchRect.contains(screenPt) { return }
+
+            // Click is outside both — dismiss
+            self.dismissWindow(onDismiss: onDismiss)
         }
     }
 
     func dismissWindow(onDismiss: @escaping () -> Void) {
-        withAnimation {
-            orderOut(nil)
+        if let monitor = globalMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalMonitor = nil
         }
+        orderOut(nil)
         onDismiss()
     }
 
-    override var canBecomeKey: Bool { true }
+    override var canBecomeKey: Bool  { true  }
     override var canBecomeMain: Bool { false }
 }

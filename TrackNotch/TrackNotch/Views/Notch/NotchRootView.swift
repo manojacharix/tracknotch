@@ -1,9 +1,9 @@
 import SwiftUI
 
-private let iconSize: CGFloat   = 22   // WingIconView outer frame (tighter to avoid clipping)
-private let iconGap: CGFloat    = 10   // gap between icons (per Figma)
-private let outerSidePadding: CGFloat = 16 // pill outer-edge padding (clears bottom corner curve)
-private let innerSidePadding: CGFloat = 10 // notch-edge padding (per Figma)
+private let iconSize: CGFloat         = 22   // WingIconView frame
+private let iconGap: CGFloat          = 8    // gap between icons
+private let outerSidePadding: CGFloat = 12   // pill outer-edge padding
+private let innerSidePadding: CGFloat = 10   // notch-edge padding
 
 struct NotchRootView: View {
     let mode: NotchMode
@@ -42,10 +42,11 @@ struct NotchRootView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Full window anchor
+            // Full window anchor — must not intercept clicks below the pill
             Color.clear
                 .frame(width: geo.map { $0.leftWingWidth + $0.notchWidth + $0.rightWingWidth } ?? 580,
                        height: trackNotchWindowHeight)
+                .allowsHitTesting(false)
 
             if let geo {
                 pillView(geo: geo)
@@ -62,6 +63,9 @@ struct NotchRootView: View {
         .onChange(of: registry.usageMap) { _ in
             withAnimation(.easeIn(duration: 0.2)) { showGlow = hasActivity }
         }
+        .onChange(of: registry.activeProviders.count) { _ in
+            withAnimation(.easeIn(duration: 0.2)) { showGlow = hasActivity }
+        }
     }
 
     // MARK: - Pill
@@ -75,6 +79,11 @@ struct NotchRootView: View {
             NotchShape(topCornerRadius: 6, bottomCornerRadius: 14)
                 .fill(Color.black)
                 .frame(width: pillWidth, height: pillHeight)
+                .overlay {
+                    // Subtle white rim always visible so user can locate the pill
+                    NotchShape(topCornerRadius: 6, bottomCornerRadius: 14)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                }
                 .overlay {
                     if showGlow {
                         NotchGlowBorder(
@@ -93,10 +102,10 @@ struct NotchRootView: View {
         }
         .frame(width: pillWidth, height: pillHeight)
         .offset(x: pillLeadingOffset)
-        .contentShape(Rectangle())
-        .onTapGesture { onToggleDropdown() }
-        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: leftProviders.count)
-        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: rightProviders.count)
+        // Animate pill expand/collapse whenever active providers change
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: leftProviders.count)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: rightProviders.count)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: registry.usageMap)
     }
 
     // MARK: - Wing content
@@ -141,6 +150,50 @@ struct NotchRootView: View {
             }
         }
     }
+}
+
+// MARK: - Preview
+
+#Preview("Pill shape") {
+    ZStack(alignment: .top) {
+        Color.white.opacity(0.15)
+        NotchShape(topCornerRadius: 6, bottomCornerRadius: 14)
+            .fill(Color.black)
+            .frame(width: 200, height: 39)
+            .overlay {
+                NotchShape(topCornerRadius: 6, bottomCornerRadius: 14)
+                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+            }
+    }
+    .frame(width: 600, height: 60)
+    .background(Color.gray.opacity(0.4))
+}
+
+#Preview("Wing active") {
+    let usage = ProviderUsage(
+        provider: .claudeCode, billingType: .subscription, window: .weekly,
+        percentage: 45, resetsAt: nil, tokensUsed: 50000, tokensLimit: 2500000,
+        costUsedUSD: nil, costLimitUSD: nil, modelBreakdown: [], fetchedAt: Date(),
+        isActivelyConsuming: true
+    )
+    return ZStack(alignment: .top) {
+        Color.white.opacity(0.15)
+        HStack(spacing: 0) {
+            Spacer()
+            NotchShape(topCornerRadius: 6, bottomCornerRadius: 14)
+                .fill(Color.black)
+                .frame(width: 244, height: 39)
+                .overlay {
+                    HStack {
+                        Spacer().frame(width: 210)
+                        WingIconView(usage: usage)
+                    }
+                }
+            Spacer()
+        }
+    }
+    .frame(width: 600, height: 60)
+    .background(Color.gray.opacity(0.4))
 }
 
 // MARK: - Pulsing add button

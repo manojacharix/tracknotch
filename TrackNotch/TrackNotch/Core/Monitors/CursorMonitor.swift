@@ -15,6 +15,7 @@ final class CursorMonitor: ObservableObject {
 
     private var activityTimer: Timer?
     private let activityTimeout: TimeInterval = 30
+    private var isFirstRead = true
 
     private let dbPath: String = {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -123,7 +124,9 @@ final class CursorMonitor: ObservableObject {
         modelBreakdown = breakdown.map { ModelUsage(modelName: $0.key, tokensUsed: $0.value, costUSD: nil) }
             .sorted { $0.tokensUsed > $1.tokensUsed }
 
-        if totalGenerations > prevGenerations { markActivity() }
+        // Skip the initial read so pre-existing DB records don't falsely trigger activity
+        if !isFirstRead && totalGenerations > prevGenerations { markActivity() }
+        isFirstRead = false
     }
 
     private func queryInt(_ db: OpaquePointer, _ sql: String) -> Int {
