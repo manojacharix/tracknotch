@@ -14,6 +14,7 @@
 		2368EE8520D4EC4D8ACAAF7A /* CodexMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 856156A9648007819F8071AC /* CodexMonitor.swift */; };
 		2A41C73411A10E868BB0CAC2 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72A0E19B59A2612ADE10BA1D /* AppSettings.swift */; };
 		2D1EC2A00FB93DE39431D8BE /* NotchGlowBorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EFE822A17E2BCB71B37157A /* NotchGlowBorder.swift */; };
+		A1B2C3D4E5F6A7B8C9D0E1F2 /* ExternalMonitorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6A7B8C9D0E1F2A3 /* ExternalMonitorView.swift */; };
 		2EA02D5A4154EF147D96B3D3 /* antigravity-mono.svg in Resources */ = {isa = PBXBuildFile; fileRef = 7FAE47BF2589132EE5CF56E1 /* antigravity-mono.svg */; };
 		369ED1E392CCC9D70C9DABC1 /* ProviderAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF4EA0210E889D874E7AAD5B /* ProviderAuthManager.swift */; };
 		396E778C48EF1E900FD2DCB4 /* ProviderRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC83C0935570F2F9444BB62 /* ProviderRegistry.swift */; };
@@ -51,6 +52,7 @@
 		14BD1E1B5EA6315EACB1D4F9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1E28490D7BA4B59F48CCBE9A /* EditModeRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditModeRow.swift; sourceTree = "<group>"; };
 		1EFE822A17E2BCB71B37157A /* NotchGlowBorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchGlowBorder.swift; sourceTree = "<group>"; };
+		B2C3D4E5F6A7B8C9D0E1F2A3 /* ExternalMonitorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalMonitorView.swift; sourceTree = "<group>"; };
 		24077CCFB005D1BE14C4316C /* NotchShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchShape.swift; sourceTree = "<group>"; };
 		309F462F2671EBD28C2AF1B3 /* AnthropicUsageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnthropicUsageFetcher.swift; sourceTree = "<group>"; };
 		31231A546DCEC33B5915CF2E /* claude-mono.svg */ = {isa = PBXFileReference; path = "claude-mono.svg"; sourceTree = "<group>"; };
@@ -188,6 +190,7 @@
 			isa = PBXGroup;
 			children = (
 				1EFE822A17E2BCB71B37157A /* NotchGlowBorder.swift */,
+				B2C3D4E5F6A7B8C9D0E1F2A3 /* ExternalMonitorView.swift */,
 				82FA93CC51E0FC3A5989882C /* NotchRootView.swift */,
 				24077CCFB005D1BE14C4316C /* NotchShape.swift */,
 			);
@@ -367,6 +370,7 @@
 				63481A891010EC66DC0A3D9C /* DropdownWindow.swift in Sources */,
 				BD308B2E1E86CD4D86FE61EE /* EditModeRow.swift in Sources */,
 				2D1EC2A00FB93DE39431D8BE /* NotchGlowBorder.swift in Sources */,
+				A1B2C3D4E5F6A7B8C9D0E1F2 /* ExternalMonitorView.swift in Sources */,
 				EB6725A39FB50A75D84F12F9 /* NotchMode.swift in Sources */,
 				3D2D29DAC61AB2A1CB0029FD /* NotchRootView.swift in Sources */,
 				CE1327848777DF5F805B223E /* NotchShape.swift in Sources */,
