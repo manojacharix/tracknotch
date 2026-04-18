@@ -59,8 +59,12 @@ final class NotchWindow: NSPanel {
         self.targetScreen = screen
         self.mode         = mode
 
+        let initialFrame = mode.isExternal
+            ? externalPanelFrame(screen: screen)
+            : notchPanelFrame(screen: screen)
+
         super.init(
-            contentRect: notchPanelFrame(screen: screen),
+            contentRect: initialFrame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -68,7 +72,13 @@ final class NotchWindow: NSPanel {
 
         configure()
         setContent()
-        installStripPanel()
+        if mode.isExternal {
+            // External monitor: small centered panel — allow mouse events directly
+            // so the dot/pill tap gesture works without a separate strip panel.
+            ignoresMouseEvents = false
+        } else {
+            installStripPanel()
+        }
     }
 
     // MARK: - Configuration
@@ -96,17 +106,27 @@ final class NotchWindow: NSPanel {
     }
 
     private func setContent() {
-        let rootView = NotchRootView(mode: mode, onToggleDropdown: { [weak self] in
-            self?.toggleDropdown()
-        })
-        .environmentObject(ProviderRegistry.shared)
-        .environmentObject(AppSettings.shared)
-        .allowsHitTesting(false)
+        let hostingView: NSHostingView<AnyView>
 
-        let hostingView = NSHostingView(rootView: rootView)
+        if mode.isExternal {
+            // External: window receives clicks directly, no allowsHitTesting(false)
+            let view = AnyView(
+                ExternalMonitorView(onToggleDropdown: { [weak self] in self?.toggleDropdown() })
+                    .environmentObject(ProviderRegistry.shared)
+            )
+            hostingView = NSHostingView(rootView: view)
+        } else {
+            let view = AnyView(
+                NotchRootView(mode: mode, onToggleDropdown: { [weak self] in self?.toggleDropdown() })
+                    .environmentObject(ProviderRegistry.shared)
+                    .environmentObject(AppSettings.shared)
+                    .allowsHitTesting(false)
+            )
+            hostingView = NSHostingView(rootView: view)
+        }
+
         hostingView.wantsLayer = true
         hostingView.layer?.masksToBounds = false
-
         contentView = hostingView
         contentView?.wantsLayer = true
         contentView?.layer?.masksToBounds = false
@@ -184,7 +204,10 @@ final class NotchWindow: NSPanel {
     // MARK: - Public
 
     func show() {
-        setFrame(notchPanelFrame(screen: targetScreen), display: true)
+        let frame = mode.isExternal
+            ? externalPanelFrame(screen: targetScreen)
+            : notchPanelFrame(screen: targetScreen)
+        setFrame(frame, display: true)
         stripPanel?.setFrame(stripRect, display: true)
         orderFrontRegardless()
         stripPanel?.orderFrontRegardless()

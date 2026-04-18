@@ -4,18 +4,29 @@ import AppKit
 enum NotchMode {
     case hardwareNotch
     case softwareNotch
+    case externalMonitor   // no notch — dot that expands into icons
 
     static func detect(for screen: NSScreen) -> NotchMode {
+        // Built-in display with physical notch
         if let left = screen.auxiliaryTopLeftArea, left.width > 0 {
             return .hardwareNotch
         }
         if screen.safeAreaInsets.top > 0 {
             return .hardwareNotch
         }
+        // External monitor: no menu-bar inset, not the built-in Retina panel.
+        // NSScreen.localizedName contains "Built-in" or the product name on Apple Silicon.
+        let builtIn = screen.localizedName.localizedCaseInsensitiveContains("built-in")
+                   || screen.localizedName.localizedCaseInsensitiveContains("retina")
+                   || screen.localizedName.localizedCaseInsensitiveContains("liquid")
+        if !builtIn {
+            return .externalMonitor
+        }
         return .softwareNotch
     }
 
     var isHardware: Bool { self == .hardwareNotch }
+    var isExternal: Bool { self == .externalMonitor }
 }
 
 // MARK: - Sizing helpers (mirrors agentnotch NotchSizing)
@@ -89,4 +100,17 @@ func notchGeometry(screen: NSScreen? = nil) -> NotchGeometry {
 @MainActor
 func notchPanelFrame(screen: NSScreen? = nil) -> NSRect {
     notchGeometry(screen: screen).windowFrame
+}
+
+/// Frame for the external monitor floating dot/icon panel.
+/// Centered horizontally at the top of the screen, tall enough for icons + dot animation.
+let externalPanelWidth:  CGFloat = 600
+let externalPanelHeight: CGFloat = 56
+
+@MainActor
+func externalPanelFrame(screen: NSScreen) -> NSRect {
+    let sf = screen.frame
+    let x  = sf.origin.x + (sf.width - externalPanelWidth) / 2
+    let y  = sf.origin.y + sf.height - externalPanelHeight
+    return NSRect(x: x, y: y, width: externalPanelWidth, height: externalPanelHeight)
 }
