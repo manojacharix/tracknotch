@@ -32,7 +32,7 @@ final class CursorMonitor: ObservableObject {
 
     func start() {
         checkInstalled()
-        guard isInstalled else { return }
+        guard isInstalled else { print("[Cursor] Not installed — skipping start"); return }
         readDB()
         watchFile()
     }

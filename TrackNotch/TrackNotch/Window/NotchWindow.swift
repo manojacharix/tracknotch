@@ -164,9 +164,11 @@ final class NotchWindow: NSPanel {
 
         hostingView.wantsLayer = true
         hostingView.layer?.masksToBounds = false
+        hostingView.layer?.drawsAsynchronously = true
         contentView = hostingView
         contentView?.wantsLayer = true
         contentView?.layer?.masksToBounds = false
+        contentView?.layer?.drawsAsynchronously = true
     }
 
     /// For external monitor mode: global monitors observe clicks and mouse movement.

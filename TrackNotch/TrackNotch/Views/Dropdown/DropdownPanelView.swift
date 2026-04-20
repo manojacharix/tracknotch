@@ -60,7 +60,7 @@ struct DropdownContent: View {
                 .padding(.bottom, 2)
             }
         }
-        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: isEditMode)
+        .animation(.interactiveSpring(response: 0.32, dampingFraction: 0.8, blendDuration: 0.08), value: isEditMode)
         .onAppear { syncProviderOrder() }
         .onChange(of: registry.usageMap.count) { _ in syncProviderOrder() }
         .onChange(of: isEditMode) { editing in
@@ -108,6 +108,8 @@ struct DropdownContent: View {
         if !missing.isEmpty {
             providerOrder.append(contentsOf: missing)
         }
+        // Prune providers that are no longer connected
+        providerOrder.removeAll { !current.contains($0) }
         // If local order is empty, just take the registry order
         if providerOrder.isEmpty {
             providerOrder = current
@@ -133,7 +135,7 @@ private struct ProviderDropDelegate: DropDelegate {
               let toIdx   = providers.firstIndex(of: target),
               fromIdx != toIdx
         else { return false }
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+        withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.8, blendDuration: 0.08)) {
             providers.move(fromOffsets: IndexSet(integer: fromIdx), toOffset: toIdx > fromIdx ? toIdx + 1 : toIdx)
         }
         return true
@@ -175,7 +177,7 @@ struct DropdownProviderPill: View {
                         LiquidFill(percentage: displayPct, height: pillHeight)
                             .frame(width: fillWidth, height: pillHeight)
                             .clipShape(Capsule())
-                            .animation(.spring(response: 0.7, dampingFraction: 0.82), value: displayPct)
+                            .animation(.interactiveSpring(response: 0.7, dampingFraction: 0.82, blendDuration: 0.1), value: displayPct)
                     }
                 }
 
@@ -236,7 +238,7 @@ struct DropdownProviderPill: View {
             if !hasAnimatedIn {
                 animatedPct = 0
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    withAnimation(.spring(response: 0.75, dampingFraction: 0.8)) {
+                    withAnimation(.interactiveSpring(response: 0.75, dampingFraction: 0.8, blendDuration: 0.1)) {
                         animatedPct = usage.percentage
                     }
                 }
@@ -245,7 +247,7 @@ struct DropdownProviderPill: View {
         }
         .onChange(of: usage.percentage) { newValue in
             guard !isAPIToken else { return }
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
+            withAnimation(.interactiveSpring(response: 0.5, dampingFraction: 0.82, blendDuration: 0.1)) {
                 animatedPct = newValue
             }
         }
@@ -255,7 +257,7 @@ struct DropdownProviderPill: View {
 
     private var costLabel: String {
         if let cost = usage.costUsedUSD {
-            if cost < 0.01 && cost > 0 { return "$0.00" }
+            if cost < 0.01 && cost > 0 { return "< $0.01" }
             return String(format: "$%.2f", cost)
         }
         return "$0.00"
@@ -349,7 +351,7 @@ private struct LiquidFill: View {
     }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { tl in
+        TimelineView(.periodic(from: .now, by: 1.0 / 60.0)) { tl in
             let phase = tl.date.timeIntervalSinceReferenceDate
             let z = zone
 

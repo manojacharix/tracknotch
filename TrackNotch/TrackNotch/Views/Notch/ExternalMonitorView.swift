@@ -7,20 +7,14 @@ import SwiftUI
 //   Hover   → all connected providers with usage data shown (stats view), full brightness
 //   Click   → dropdown expands below the pill
 //
-// Collapse sequence (notchless / external only):
-//   1. Icons slide inward + fade out (staggered)
-//   2. Pill shrinks slowly after icons are gone
-//   3. Pill fades out as a dot
+// Collapse: pill shrinks smoothly from icon-width → dot (8pt) → opacity 0
 
 private let iconSize:         CGFloat = 22
 private let iconGap:          CGFloat = 8
 private let sidePadding:      CGFloat = 10
 private let extPillHeight:    CGFloat = 32
 private let pillCornerRadius: CGFloat = 16
-private let staggerStep:      Double  = 0.06
-
-// How long all icons take to finish their exit (stagger * maxIcons + icon animation duration)
-private let iconExitDuration: Double  = 0.45
+private let staggerStep:      Double  = 0.05
 
 // Expanded dropdown dimensions
 private let extExpandedWidth:        CGFloat = 380
@@ -29,9 +23,10 @@ private let extExpandedBottomRadius: CGFloat = 26
 struct ExternalMonitorView: View {
     @EnvironmentObject var registry: ProviderRegistry
 
-    // Separate pill visibility so it can linger after icons leave
+    // Pill state
     @State private var pillVisible: Bool = false
-    @State private var pillCollapseTimer: Timer? = nil
+    @State private var pillOpacity: Double = 0
+    @State private var collapseWork: DispatchWorkItem? = nil
 
     // Dropdown state
     @State private var isExpanded: Bool = false
@@ -51,7 +46,7 @@ struct ExternalMonitorView: View {
 
     private var hasIcons: Bool { !visibleProviders.isEmpty }
 
-    // Split into left/right halves from center — left reversed so outermost is index 0
+    // Split into left/right halves from center
     private var leftProviders: [LLMProvider] {
         let half = visibleProviders.count / 2
         return Array(visibleProviders.prefix(half).reversed())
@@ -61,7 +56,7 @@ struct ExternalMonitorView: View {
         return Array(visibleProviders.dropFirst(half))
     }
 
-    // Pill width when icons present; dot size when collapsing empty
+    // Pill width: icons present → sized to icons; empty → dot
     private var collapsedPillWidth: CGFloat {
         guard hasIcons else { return 8 }
         let n = CGFloat(visibleProviders.count)
@@ -73,7 +68,7 @@ struct ExternalMonitorView: View {
     }
 
     private var shapeHeight: CGFloat {
-        isExpanded ? extPillHeight + expandedContentHeight : extPillHeight
+        isExpanded ? extPillHeight + expandedContentHeight : (hasIcons ? extPillHeight : 8)
     }
 
     var body: some View {
@@ -82,100 +77,95 @@ struct ExternalMonitorView: View {
                 .frame(width: trackNotchWindowWidth, height: isExpanded ? trackNotchWindowHeight : externalPanelHeight)
                 .allowsHitTesting(false)
 
-            if pillVisible || isExpanded {
-                ZStack(alignment: .top) {
-                    // Shape — animates between pill and expanded card
-                    RoundedRectangle(cornerRadius: isExpanded ? extExpandedBottomRadius : pillCornerRadius)
-                        .fill(Color.black)
-                        .frame(width: shapeWidth, height: shapeHeight)
-                        .shadow(color: .black.opacity(isExpanded ? 0.7 : 0.4),
-                                radius: isExpanded ? 24 : 6,
-                                y: isExpanded ? 10 : 0)
-                        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: shapeWidth)
-                        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: shapeHeight)
-                        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: isExpanded)
+            // The pill/card — always in tree when visible, opacity-driven
+            ZStack(alignment: .top) {
+                // Shape
+                RoundedRectangle(cornerRadius: isExpanded ? extExpandedBottomRadius : pillCornerRadius)
+                    .fill(Color.black)
+                    .frame(width: shapeWidth, height: shapeHeight)
+                    .shadow(color: .black.opacity(isExpanded ? 0.7 : 0.4),
+                            radius: isExpanded ? 24 : 6,
+                            y: isExpanded ? 10 : 0)
 
-                    // Icons — only rendered when present and not expanded
-                    if hasIcons && !isExpanded {
-                        iconsView
-                            .frame(height: extPillHeight)
-                    }
-
-                    // Expanded: edit + settings bar at top
-                    if isExpanded {
-                        HStack(spacing: 0) {
-                            Spacer(minLength: 0)
-
-                            Button(isEditMode ? "done" : "edit") {
-                                isEditMode.toggle()
-                            }
-                            .buttonStyle(.borderless)
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundColor(.white.opacity(0.7))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(Color.white.opacity(0.12)))
-                            .contentShape(Capsule())
-
-                            Spacer(minLength: 0)
-
-                            Button("settings") {
-                                ConnectionWindowController.shared.open()
-                                NotificationCenter.default.post(name: .notchCollapseDropdown, object: nil)
-                            }
-                            .buttonStyle(.borderless)
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundColor(.white.opacity(0.7))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(Color.white.opacity(0.12)))
-                            .contentShape(Capsule())
-
-                            Spacer(minLength: 0)
-                        }
-                        .frame(width: shapeWidth, height: extPillHeight)
-                        .opacity(contentVisible ? 1 : 0)
-                    }
-
-                    // Expanded: dropdown content below the bar
-                    if isExpanded {
-                        VStack(spacing: 0) {
-                            Color.clear.frame(height: extPillHeight)
-
-                            DropdownContent(onDismiss: {
-                                NotificationCenter.default.post(name: .notchCollapseDropdown, object: nil)
-                            }, isEditMode: $isEditMode)
-                                .padding(.top, 8)
-                                .padding(.horizontal, 4)
-                                .padding(.bottom, 8)
-                                .opacity(contentVisible ? 1 : 0)
-                                .background(
-                                    GeometryReader { proxy in
-                                        Color.clear.onAppear {
-                                            expandedContentHeight = proxy.size.height
-                                        }.onChange(of: proxy.size.height) { h in
-                                            expandedContentHeight = h
-                                        }
-                                    }
-                                )
-                        }
-                        .frame(width: shapeWidth)
-                        .clipped()
-                    }
+                // Icons — only when present and not expanded
+                if hasIcons && !isExpanded {
+                    iconsView
+                        .frame(height: extPillHeight)
                 }
-                .frame(width: shapeWidth, height: shapeHeight, alignment: .top)
-                .allowsHitTesting(isExpanded)
-                .transition(
-                    .asymmetric(
-                        insertion: .scale(scale: 0.4).combined(with: .opacity)
-                            .animation(.spring(response: 0.38, dampingFraction: 0.75)),
-                        removal: .scale(scale: 0.4).combined(with: .opacity)
-                            .animation(.spring(response: 0.7, dampingFraction: 0.88))
-                    )
-                )
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, isExpanded ? 8 : (externalPanelHeight - extPillHeight) / 2)
+
+                // Expanded: edit + settings bar at top
+                if isExpanded {
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+
+                        Button(isEditMode ? "done" : "edit") {
+                            isEditMode.toggle()
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.white.opacity(0.12)))
+                        .contentShape(Capsule())
+
+                        Spacer(minLength: 0)
+
+                        Button("settings") {
+                            ConnectionWindowController.shared.open()
+                            NotificationCenter.default.post(name: .notchCollapseDropdown, object: nil)
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.white.opacity(0.12)))
+                        .contentShape(Capsule())
+
+                        Spacer(minLength: 0)
+                    }
+                    .frame(width: shapeWidth, height: extPillHeight)
+                    .opacity(contentVisible ? 1 : 0)
+                }
+
+                // Expanded: dropdown content
+                if isExpanded {
+                    VStack(spacing: 0) {
+                        Color.clear.frame(height: extPillHeight)
+
+                        DropdownContent(onDismiss: {
+                            NotificationCenter.default.post(name: .notchCollapseDropdown, object: nil)
+                        }, isEditMode: $isEditMode)
+                            .padding(.top, 8)
+                            .padding(.horizontal, 4)
+                            .padding(.bottom, 8)
+                            .opacity(contentVisible ? 1 : 0)
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear.onAppear {
+                                        expandedContentHeight = proxy.size.height
+                                    }.onChange(of: proxy.size.height) { h in
+                                        expandedContentHeight = h
+                                    }
+                                }
+                            )
+                    }
+                    .frame(width: shapeWidth)
+                    .clipped()
+                }
             }
+            .frame(width: shapeWidth, height: shapeHeight, alignment: .top)
+            .opacity(pillOpacity)
+            .scaleEffect(pillVisible ? 1.0 : 0.6)
+            .animation(.smooth(duration: 0.35), value: shapeWidth)
+            .animation(.smooth(duration: 0.35), value: shapeHeight)
+            .animation(.smooth(duration: 0.35), value: isExpanded)
+            .animation(.smooth(duration: 0.3), value: pillOpacity)
+            .animation(.smooth(duration: 0.3), value: pillVisible)
+            .allowsHitTesting(isExpanded)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, isExpanded ? 8 : (externalPanelHeight - extPillHeight) / 2)
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchExpandDropdown)) { _ in
             openExpanded()
@@ -186,40 +176,45 @@ struct ExternalMonitorView: View {
         .onChange(of: hasIcons) { nowHasIcons in
             guard !isExpanded else { return }
             if nowHasIcons {
-                pillCollapseTimer?.invalidate()
-                pillCollapseTimer = nil
-                withAnimation { pillVisible = true }
+                // Cancel any pending collapse
+                collapseWork?.cancel()
+                collapseWork = nil
+                showPill()
             } else {
-                pillCollapseTimer?.invalidate()
-                pillCollapseTimer = Timer.scheduledTimer(
-                    withTimeInterval: iconExitDuration, repeats: false
-                ) { _ in
-                    DispatchQueue.main.async {
-                        Timer.scheduledTimer(withTimeInterval: 0.7, repeats: false) { _ in
-                            DispatchQueue.main.async {
-                                withAnimation(.easeOut(duration: 0.3)) {
-                                    pillVisible = false
-                                }
-                            }
-                        }
-                    }
+                // Schedule smooth collapse: wait for icon exit, then shrink + fade
+                let work = DispatchWorkItem { [self] in
+                    hidePill()
                 }
+                collapseWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
             }
         }
         .onAppear {
-            pillVisible = hasIcons
+            if hasIcons { showPill() }
         }
     }
 
-    // MARK: - Expand / Collapse
+    // MARK: - Show / Hide pill
+
+    private func showPill() {
+        pillVisible = true
+        pillOpacity = 1.0
+    }
+
+    private func hidePill() {
+        pillVisible = false
+        pillOpacity = 0
+    }
+
+    // MARK: - Expand / Collapse dropdown
 
     private func openExpanded() {
         guard !isExpanded else { return }
-        pillVisible = true
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+        showPill()
+        withAnimation(.smooth(duration: 0.4)) {
             isExpanded = true
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             withAnimation(.easeOut(duration: 0.2)) { contentVisible = true }
         }
     }
@@ -227,9 +222,9 @@ struct ExternalMonitorView: View {
     private func closeExpanded() {
         guard isExpanded else { return }
         isEditMode = false
-        withAnimation(.easeInOut(duration: 0.18)) { contentVisible = false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
-            withAnimation(.spring(response: 0.48, dampingFraction: 0.88)) { isExpanded = false }
+        withAnimation(.easeOut(duration: 0.15)) { contentVisible = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            withAnimation(.smooth(duration: 0.35)) { isExpanded = false }
         }
     }
 
@@ -257,12 +252,10 @@ struct ExternalMonitorView: View {
                     .asymmetric(
                         insertion: .move(edge: provider.notchWing == .left ? .trailing : .leading)
                             .combined(with: .opacity)
-                            .animation(.spring(response: 0.38, dampingFraction: 0.78)
-                                .delay(Double(outerIdx) * staggerStep)),
+                            .animation(.smooth(duration: 0.3).delay(Double(outerIdx) * staggerStep)),
                         removal: .move(edge: provider.notchWing == .left ? .trailing : .leading)
                             .combined(with: .opacity)
-                            .animation(.spring(response: 0.45, dampingFraction: 0.85)
-                                .delay(Double(outerIdx) * staggerStep))
+                            .animation(.smooth(duration: 0.25).delay(Double(outerIdx) * staggerStep))
                     )
                 )
         }

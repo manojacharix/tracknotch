@@ -33,7 +33,7 @@ final class CodexMonitor: ObservableObject {
 
     func start() {
         checkInstalled()
-        guard isInstalled else { return }
+        guard isInstalled else { print("[Codex] Not installed — skipping start"); return }
         readDB()
         watchDB()
         scanTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in

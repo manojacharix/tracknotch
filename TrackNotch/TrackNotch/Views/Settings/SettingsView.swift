@@ -74,13 +74,6 @@ struct DisplaySettingsTab: View {
 
     var body: some View {
         Form {
-            Section("Idle Behaviour") {
-                Picker("Collapse after", selection: $settings.idleCollapseTimeout) {
-                    ForEach(IdleTimeout.allCases) { timeout in
-                        Text(timeout.rawValue).tag(timeout)
-                    }
-                }
-            }
         }
         .padding()
     }

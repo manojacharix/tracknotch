@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Monitors ~/Library/Application Support/com.openai.chat/conversations-*/ for ChatGPT Desktop.
@@ -32,7 +33,7 @@ final class ChatGPTDesktopMonitor: ObservableObject {
 
     func start() {
         checkInstalled()
-        guard isInstalled else { return }
+        guard isInstalled else { print("[ChatGPT] Not installed — skipping start"); return }
         scanConversations()
         watchDirectory()
         scanTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
@@ -100,10 +101,25 @@ final class ChatGPTDesktopMonitor: ObservableObject {
     // MARK: - Scanning
 
     private func markActivity() {
+        // Only mark as active if the app is actually running
+        guard isAppRunning else { return }
         isActivelyConsuming = true
         activityTimer?.invalidate()
         activityTimer = Timer.scheduledTimer(withTimeInterval: activityTimeout, repeats: false) { [weak self] _ in
             Task { @MainActor in self?.isActivelyConsuming = false }
+        }
+    }
+
+    /// Check if ChatGPT/Antigravity is currently running
+    private var isAppRunning: Bool {
+        let apps = NSWorkspace.shared.runningApplications
+        return apps.contains { app in
+            let id = app.bundleIdentifier ?? ""
+            return id == "com.openai.chat"
+                || id == "com.openai.chatgpt"
+                || id == "com.openai.antigravity"
+                || app.localizedName == "Antigravity"
+                || app.localizedName == "ChatGPT"
         }
     }
 

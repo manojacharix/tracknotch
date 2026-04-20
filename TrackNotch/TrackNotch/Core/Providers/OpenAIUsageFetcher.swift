@@ -23,7 +23,10 @@ final class OpenAIUsageFetcher: ObservableObject {
     // MARK: - Lifecycle
 
     func start() {
-        guard ProviderAuthManager.shared.loadAPIKey(for: .openAIAPI) != nil else { return }
+        guard ProviderAuthManager.shared.loadAPIKey(for: .openAIAPI) != nil else {
+            print("[OpenAI] No API key configured — skipping start")
+            return
+        }
         ProviderRegistry.shared.updateUsage(toProviderUsage())
         Task {
             await fetchBalance()
@@ -202,11 +205,11 @@ final class OpenAIUsageFetcher: ObservableObject {
     // MARK: - Usage conversion
 
     func toProviderUsage() -> ProviderUsage {
-        // Primary: show monthly spend
-        // If we got a balance from the API, show that instead
-        let displayCost = balanceUSD ?? totalCostUSD
-        // Only show a limit if we got one from the API (not user-set budget)
-        let displayLimit = creditLimitUSD
+        // Primary: show monthly spend from costs endpoint
+        // Balance is remaining credit — don't confuse with spend
+        let displayCost = totalCostUSD
+        let budget = AppSettings.shared.openAIMonthlyBudget
+        let displayLimit: Double? = creditLimitUSD ?? (budget > 0 ? budget : nil)
 
         let pct: Double
         if let limit = displayLimit, limit > 0 {

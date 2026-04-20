@@ -113,9 +113,9 @@ struct NotchRootView: View {
         iconsVisible = false
         pillExpanded = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { pillExpanded = true }
+            withAnimation(.interactiveSpring(response: 0.38, dampingFraction: 0.82, blendDuration: 0.1)) { pillExpanded = true }
             DispatchQueue.main.asyncAfter(deadline: .now() + iconExpandDelay) {
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) { iconsVisible = true }
+                withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.78, blendDuration: 0.08)) { iconsVisible = true }
             }
         }
     }
@@ -124,7 +124,7 @@ struct NotchRootView: View {
         iconsVisible = false
         let iconsDone = Double(max(leftProviders.count, rightProviders.count)) * staggerStep + 0.30
         DispatchQueue.main.asyncAfter(deadline: .now() + iconsDone) {
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.85)) { pillExpanded = false }
+            withAnimation(.interactiveSpring(response: 0.42, dampingFraction: 0.85, blendDuration: 0.1)) { pillExpanded = false }
         }
     }
 
@@ -135,7 +135,7 @@ struct NotchRootView: View {
         // Fade icons out, then grow shape and fade content in
         withAnimation(.easeOut(duration: 0.12)) { iconsVisible = false }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+            withAnimation(.interactiveSpring(response: 0.5, dampingFraction: 0.85, blendDuration: 0.12)) {
                 isExpanded = true
                 pillExpanded = true
             }
@@ -151,7 +151,7 @@ struct NotchRootView: View {
         // Fade content out, then shrink shape back to pill, then restore wing icons
         withAnimation(.easeInOut(duration: 0.18)) { contentVisible = false }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
-            withAnimation(.spring(response: 0.48, dampingFraction: 0.88)) { isExpanded = false }
+            withAnimation(.interactiveSpring(response: 0.48, dampingFraction: 0.88, blendDuration: 0.1)) { isExpanded = false }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
                 if shouldShow { expand() }
             }
@@ -173,9 +173,9 @@ struct NotchRootView: View {
                 .shadow(color: .black.opacity(isExpanded ? 0.7 : 0.5),
                         radius: isExpanded ? 24 : 8,
                         y: isExpanded ? 10 : 0)
-                .animation(.spring(response: 0.45, dampingFraction: 0.82), value: pillWidth)
-                .animation(.spring(response: 0.45, dampingFraction: 0.82), value: notchShapeHeight)
-                .animation(.spring(response: 0.45, dampingFraction: 0.82), value: isExpanded)
+                .animation(.interactiveSpring(response: 0.45, dampingFraction: 0.82, blendDuration: 0.1), value: pillWidth)
+                .animation(.interactiveSpring(response: 0.45, dampingFraction: 0.82, blendDuration: 0.1), value: notchShapeHeight)
+                .animation(.interactiveSpring(response: 0.45, dampingFraction: 0.82, blendDuration: 0.1), value: isExpanded)
 
             // Wing icons (idle/hover state) — hidden while expanded
             if iconsVisible && !isExpanded {
@@ -260,7 +260,7 @@ struct NotchRootView: View {
         }
         .frame(width: pillWidth, height: notchShapeHeight, alignment: .top)
         .offset(x: pillLeadingOffset)
-        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: pillLeadingOffset)
+        .animation(.interactiveSpring(response: 0.45, dampingFraction: 0.82, blendDuration: 0.1), value: pillLeadingOffset)
         // Pass all events through to StripPanel when collapsed; interactive when expanded
         .allowsHitTesting(isExpanded)
     }
@@ -338,13 +338,17 @@ private struct NotchSlideIcon: View {
             .onAppear {
                 visible = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + expandDelay) {
-                    withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) { visible = true }
+                    withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.78, blendDuration: 0.08)) { visible = true }
                 }
             }
             .onChange(of: isShowing) { showing in
-                if !showing {
+                if showing {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + expandDelay) {
+                        withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.78, blendDuration: 0.08)) { visible = true }
+                    }
+                } else {
                     DispatchQueue.main.asyncAfter(deadline: .now() + collapseDelay) {
-                        withAnimation(.spring(response: 0.26, dampingFraction: 0.84)) { visible = false }
+                        withAnimation(.interactiveSpring(response: 0.26, dampingFraction: 0.84, blendDuration: 0.06)) { visible = false }
                     }
                 }
             }

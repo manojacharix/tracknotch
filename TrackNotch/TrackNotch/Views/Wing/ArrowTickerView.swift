@@ -21,49 +21,47 @@ struct UsageArc: View {
     }
 }
 
-// MARK: - Arrow ticker
+// MARK: - API spend indicator
 
-/// Upward-rolling arrow ticker shown beside API token providers in the wing.
-/// Animates continuously upward every 1 second while tokens are being consumed.
+/// Small upward-drifting arrow shown beside API token providers in the wing.
+/// When consuming: arrow floats up and fades out, then resets and repeats.
+/// When idle: static arrow at rest position.
 struct ArrowTickerView: View {
     let isConsuming: Bool
 
-    @State private var tickOffset: CGFloat = 0
+    @State private var offsetY: CGFloat = 0
+    @State private var opacity: Double = 0.7
+    @State private var animating = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Ghost arrow above (appears as current arrow rolls out)
-            Image(systemName: "arrow.up")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(Color(hex: "ff9b2f"))
-                .frame(height: 10)
+        Image(systemName: "arrow.up")
+            .font(.system(size: 6, weight: .bold))
+            .foregroundStyle(Color(hex: "ff9b2f").opacity(opacity))
+            .offset(y: offsetY)
+            .onAppear {
+                if isConsuming { startDrift() }
+            }
+            .onChange(of: isConsuming) { consuming in
+                if consuming { startDrift() } else { stopDrift() }
+            }
+    }
 
-            // Main arrow
-            Image(systemName: "arrow.up")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(Color(hex: "ff9b2f"))
-                .frame(height: 10)
-        }
-        .offset(y: tickOffset)
-        .frame(width: 10, height: 10)
-        .clipped()
-        .onAppear { startAnimating() }
-        .onChange(of: isConsuming) { consuming in
-            if consuming { startAnimating() } else { stopAnimating() }
+    private func startDrift() {
+        guard !animating else { return }
+        animating = true
+        offsetY = 0
+        opacity = 0.7
+        withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: false)) {
+            offsetY = -5
+            opacity = 0.0
         }
     }
 
-    private func startAnimating() {
-        guard isConsuming else { return }
-        tickOffset = 0
-        withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
-            tickOffset = -10
-        }
-    }
-
-    private func stopAnimating() {
-        withAnimation(.easeOut(duration: 0.2)) {
-            tickOffset = 0
+    private func stopDrift() {
+        animating = false
+        withAnimation(.easeOut(duration: 0.3)) {
+            offsetY = 0
+            opacity = 0.7
         }
     }
 }

@@ -58,7 +58,10 @@ final class ClaudeCodeMonitor: ObservableObject {
 
     func start() {
         checkInstalled()
-        guard isInstalled else { return }
+        guard isInstalled else {
+            print("[ClaudeCode] Not installed — skipping start")
+            return
+        }
         readStats()
         watchStatsFile()
         startActivityPolling()
@@ -83,9 +86,17 @@ final class ClaudeCodeMonitor: ObservableObject {
         let binaryInstalled = fm.fileExists(atPath: "/usr/local/bin/claude")
                            || fm.fileExists(atPath: "/opt/homebrew/bin/claude")
                            || fm.fileExists(atPath: "\(home)/.local/bin/claude")
-                           || fm.fileExists(atPath: "\(home)/.nvm/versions/node")  // nvm present = likely installed via npm
+                           || Self.claudeExistsInNvm(home: home)  // installed via npm in nvm
         let hasStatsFile = fm.fileExists(atPath: statsFile.path)
         isInstalled = binaryInstalled || hasStatsFile
+    }
+
+    /// Check if `claude` binary exists in any nvm node version's bin directory.
+    private static func claudeExistsInNvm(home: String) -> Bool {
+        let nvmVersions = "\(home)/.nvm/versions/node"
+        let fm = FileManager.default
+        guard let dirs = try? fm.contentsOfDirectory(atPath: nvmVersions) else { return false }
+        return dirs.contains { fm.fileExists(atPath: "\(nvmVersions)/\($0)/bin/claude") }
     }
 
     // MARK: - Activity polling

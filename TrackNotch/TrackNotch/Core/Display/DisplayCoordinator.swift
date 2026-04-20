@@ -31,7 +31,12 @@ final class DisplayCoordinator: ObservableObject {
     // MARK: - Window Management
 
     private func setupWindows() {
+        // In clamshell mode, NSScreen.screens may momentarily include the built-in display.
+        // Only create one window per unique display ID.
+        var seenDisplayIDs = Set<UInt32>()
         for screen in NSScreen.screens {
+            let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32 ?? 0
+            guard seenDisplayIDs.insert(displayID).inserted else { continue }
             addWindow(for: screen)
         }
     }

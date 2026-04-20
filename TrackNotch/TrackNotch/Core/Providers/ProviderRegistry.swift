@@ -26,7 +26,7 @@ final class ProviderRegistry: ObservableObject {
     /// Linger timers: keep a provider visible after it stops actively consuming.
     /// 6s gives enough runway to bridge polling gaps and the full collapse animation
     /// without the icon flickering out mid-session.
-    private static let lingerDuration: TimeInterval = 6
+    private static let lingerDuration: TimeInterval = 4
     private var lingerTimers: [LLMProvider: Timer] = [:]
     @Published private var lingering: Set<LLMProvider> = []
 
@@ -205,7 +205,15 @@ final class ProviderRegistry: ObservableObject {
             .sink { [weak self] states in
                 guard let self else { return }
                 for (provider, state) in states {
+                    let wasConnected = self.connectionStates[provider]?.isConnected == true
                     self.connectionStates[provider] = state
+                    // Remove pill when a provider is disconnected
+                    if wasConnected && !state.isConnected {
+                        self.usageMap.removeValue(forKey: provider)
+                        self.lingering.remove(provider)
+                        self.lingerTimers[provider]?.invalidate()
+                        self.lingerTimers[provider] = nil
+                    }
                 }
             }
             .store(in: &cancellables)
