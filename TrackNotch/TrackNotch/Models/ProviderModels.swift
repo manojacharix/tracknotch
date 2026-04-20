@@ -149,6 +149,7 @@ enum NotchWing {
 // MARK: - Usage Window
 
 enum UsageWindow: String, Codable {
+    case session   = "session"
     case fiveHour  = "5h"
     case daily     = "24h"
     case weekly    = "7d"
@@ -156,6 +157,7 @@ enum UsageWindow: String, Codable {
 
     var displayName: String {
         switch self {
+        case .session:  return "Session"
         case .fiveHour: return "5-hour"
         case .daily:    return "Daily"
         case .weekly:   return "Weekly"

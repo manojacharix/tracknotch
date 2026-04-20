@@ -1,16 +1,16 @@
 import SwiftUI
 
-// MARK: - Wing indicator: icon with usage arc
+// MARK: - Wing indicator: icon with usage arc (subscription) or animated arrow (API spend)
 
-/// Shows the provider's icon with a colored arc indicating usage %.
-/// - Arc starts at 12 o'clock, progresses clockwise.
-/// - 100% = full ring.
-/// - >100% (depleted): full red ring pulses to signal quota exhausted.
-/// - Background is transparent — black notch shows through.
+/// Shows the provider's icon with either:
+/// - A colored arc (subscription/localUsage billing): indicates quota %.
+/// - An animated upward arrow (apiToken billing): animates continuously while spending.
+/// Background is transparent — black notch shows through.
 struct WingIconView: View {
     let usage: ProviderUsage
     @State private var pulsing = false
 
+    private var isAPISpend: Bool { usage.billingType == .apiToken }
     private var isDepleted: Bool { usage.percentage >= 100 }
 
     private var arcColor: Color {
@@ -30,15 +30,22 @@ struct WingIconView: View {
 
     var body: some View {
         ZStack {
-            // Usage arc — 20px frame keeps stroke within the 22px outer container (no clipping)
-            Circle()
-                .trim(from: 0, to: trimFraction)
-                .stroke(
-                    arcColor.opacity(isDepleted && pulsing ? 0.35 : 1.0),
-                    style: StrokeStyle(lineWidth: 3.5, lineCap: .round)
-                )
-                .frame(width: 18, height: 18)
-                .rotationEffect(.degrees(-90))   // start at 12 o'clock
+            if isAPISpend {
+                // API spend: animated upward arrow replaces arc
+                ArrowTickerView(isConsuming: usage.isActivelyConsuming)
+                    .frame(width: 10, height: 10)
+                    .offset(x: 6, y: -6)   // top-right corner, same position as arc would be
+            } else {
+                // Subscription/local: colored arc indicating quota %
+                Circle()
+                    .trim(from: 0, to: trimFraction)
+                    .stroke(
+                        arcColor.opacity(isDepleted && pulsing ? 0.35 : 1.0),
+                        style: StrokeStyle(lineWidth: 3.5, lineCap: .round)
+                    )
+                    .frame(width: 18, height: 18)
+                    .rotationEffect(.degrees(-90))   // start at 12 o'clock
+            }
 
             // Provider icon — rendered as template (declared in asset catalog)
             Image(usage.provider.iconName)
@@ -49,10 +56,12 @@ struct WingIconView: View {
         }
         .frame(width: 22, height: 22)
         .onAppear {
-            if isDepleted { startPulse() }
+            if !isAPISpend && isDepleted { startPulse() }
         }
         .onChange(of: usage.percentage) { newVal in
-            if newVal >= 100 { startPulse() } else { stopPulse() }
+            if !isAPISpend {
+                if newVal >= 100 { startPulse() } else { stopPulse() }
+            }
         }
     }
 
@@ -72,8 +81,8 @@ struct WingIconView: View {
 // MARK: - Preview
 
 #Preview {
-    VStack(spacing: 12) {
-        Text("2% · 45% · 80% · 100% (depleted)").font(.caption).foregroundColor(.gray)
+    VStack(spacing: 16) {
+        Text("Subscription arc: 2% · 45% · 80% · 100%").font(.caption).foregroundColor(.gray)
         HStack(spacing: 16) {
             ForEach([2.0, 45.0, 80.0, 100.0], id: \.self) { pct in
                 WingIconView(usage: ProviderUsage(
@@ -83,6 +92,22 @@ struct WingIconView: View {
                     isActivelyConsuming: true
                 ))
             }
+        }
+        Divider().background(Color.gray)
+        Text("API spend arrow (active · idle)").font(.caption).foregroundColor(.gray)
+        HStack(spacing: 16) {
+            WingIconView(usage: ProviderUsage(
+                provider: .anthropicAPI, billingType: .apiToken, window: .monthly,
+                percentage: 30, resetsAt: nil, tokensUsed: 10000, tokensLimit: nil,
+                costUsedUSD: 1.20, costLimitUSD: 4.00, modelBreakdown: [], fetchedAt: Date(),
+                isActivelyConsuming: true
+            ))
+            WingIconView(usage: ProviderUsage(
+                provider: .anthropicAPI, billingType: .apiToken, window: .monthly,
+                percentage: 30, resetsAt: nil, tokensUsed: 10000, tokensLimit: nil,
+                costUsedUSD: 1.20, costLimitUSD: 4.00, modelBreakdown: [], fetchedAt: Date(),
+                isActivelyConsuming: false
+            ))
         }
     }
     .padding(20)

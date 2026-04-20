@@ -91,6 +91,18 @@ struct BudgetSettingsTab: View {
 
     var body: some View {
         Form {
+            Section("Claude Arc") {
+                Stepper(value: $settings.claudeContextLimit, in: 50_000...1_000_000, step: 50_000) {
+                    HStack {
+                        Text("Context window")
+                        Spacer()
+                        Text("\(settings.claudeContextLimit / 1000)K tokens")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .help("The arc shows how full your active session's context window is — same as the % Claude shows in its own UI. Current models (Sonnet, Opus) use 200K.")
+            }
+
             Section("Subscription Plans") {
                 Picker("Claude Code", selection: $settings.claudePlanTier) {
                     ForEach(ClaudePlanTier.allCases) { tier in

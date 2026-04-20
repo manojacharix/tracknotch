@@ -8,6 +8,8 @@ final class ChatGPTDesktopMonitor: ObservableObject {
 
     @Published private(set) var isInstalled = false
     @Published private(set) var totalConversations: Int = 0
+    @Published private(set) var monthlyConversations: Int = 0
+    @Published private(set) var todayConversations: Int = 0
     @Published private(set) var modelBreakdown: [ModelUsage] = []
     @Published private(set) var isActivelyConsuming = false
 
@@ -54,7 +56,15 @@ final class ChatGPTDesktopMonitor: ObservableObject {
     // MARK: - Detection
 
     private func checkInstalled() {
-        isInstalled = FileManager.default.fileExists(atPath: supportDir.path)
+        let fm = FileManager.default
+        let home = NSHomeDirectory()
+        // Antigravity is the ChatGPT-based desktop client on this machine.
+        // Also check for the upstream ChatGPT.app in case the user has that instead.
+        let appInstalled = fm.fileExists(atPath: "/Applications/Antigravity.app")
+                        || fm.fileExists(atPath: "\(home)/Applications/Antigravity.app")
+                        || fm.fileExists(atPath: "/Applications/ChatGPT.app")
+                        || fm.fileExists(atPath: "\(home)/Applications/ChatGPT.app")
+        isInstalled = appInstalled && fm.fileExists(atPath: supportDir.path)
     }
 
     // MARK: - Directory Watching
@@ -102,34 +112,58 @@ final class ChatGPTDesktopMonitor: ObservableObject {
         guard fm.fileExists(atPath: supportDir.path) else { return }
 
         let prevConversations = totalConversations
-        var conversations = 0
-        let models: [String: Int] = [:]
+        var allConversations = 0
+        var thisMonthConversations = 0
+        var thisDayConversations = 0
+        let monthStart = Self.currentMonthStart()
+        let dayStart   = Calendar.current.startOfDay(for: Date())
 
         // ChatGPT desktop stores conversations in conversations-<uuid>/ directories
         let contents = (try? fm.contentsOfDirectory(at: supportDir, includingPropertiesForKeys: nil)) ?? []
-        for url in contents where url.lastPathComponent.hasPrefix("conversations") {
-            if let items = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
-                conversations += items.filter { $0.pathExtension == "json" }.count
+        for dir in contents where dir.lastPathComponent.hasPrefix("conversations") {
+            let items = (try? fm.contentsOfDirectory(
+                at: dir,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: []
+            )) ?? []
+            let convFiles = items.filter { $0.pathExtension == "data" || $0.pathExtension == "json" }
+            allConversations += convFiles.count
+            for url in convFiles {
+                let modDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                if modDate >= monthStart { thisMonthConversations += 1 }
+                if modDate >= dayStart   { thisDayConversations   += 1 }
             }
         }
 
-        totalConversations = conversations
-        modelBreakdown = models.map { ModelUsage(modelName: $0.key, tokensUsed: $0.value, costUSD: nil) }
+        totalConversations = allConversations
+        monthlyConversations = thisMonthConversations
+        todayConversations = thisDayConversations
 
-        if conversations > prevConversations { markActivity() }
+        if allConversations > prevConversations { markActivity() }
+    }
+
+    private static func currentMonthStart() -> Date {
+        let cal = Calendar.current
+        let components = cal.dateComponents([.year, .month], from: Date())
+        return cal.date(from: components) ?? Date()
     }
 
     // MARK: - Usage conversion
 
+    // Daily soft cap for the arc — 5 conversations/day is a reasonable active-user baseline.
+    // Not a hard limit; just makes the arc visually meaningful at normal usage volumes.
+    private let dailyCap = 5
+
     func toProviderUsage() -> ProviderUsage {
-        ProviderUsage(
+        let pct = min(Double(todayConversations) / Double(dailyCap) * 100, 100)
+        return ProviderUsage(
             provider: .chatGPTDesktop,
             billingType: .localUsage,
-            window: .monthly,
-            percentage: 0,
+            window: .daily,
+            percentage: pct,
             resetsAt: nil,
-            tokensUsed: totalConversations,
-            tokensLimit: nil,
+            tokensUsed: todayConversations,
+            tokensLimit: dailyCap,
             costUsedUSD: nil,
             costLimitUSD: nil,
             modelBreakdown: modelBreakdown,

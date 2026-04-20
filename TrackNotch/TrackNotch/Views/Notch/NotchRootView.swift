@@ -1,9 +1,21 @@
 import SwiftUI
 
-private let iconSize: CGFloat         = 22   // WingIconView frame
-private let iconGap: CGFloat          = 8    // gap between icons
-private let outerSidePadding: CGFloat = 12   // pill outer-edge padding
-private let innerSidePadding: CGFloat = 10   // notch-edge padding
+private let iconSize: CGFloat         = 22
+private let iconGap: CGFloat          = 8
+private let outerSidePadding: CGFloat = 12
+private let innerSidePadding: CGFloat = 10
+
+// Timing constants
+private let pillExpandDelay:   Double = 0.0
+private let iconExpandDelay:   Double = 0.12
+private let iconCollapseDelay: Double = 0.0
+private let pillCollapseDelay: Double = 0.18
+private let staggerStep:       Double = 0.05
+
+// Expanded notch dimensions
+private let expandedWidth:  CGFloat = 380
+private let expandedTopRadius:    CGFloat = 10
+private let expandedBottomRadius: CGFloat = 26
 
 struct NotchRootView: View {
     let mode: NotchMode
@@ -12,35 +24,58 @@ struct NotchRootView: View {
     @EnvironmentObject var registry: ProviderRegistry
     @State private var geo: NotchGeometry? = nil
 
-    // LEFT wing: Cursor, OpenAI API, Codex
-    private var leftProviders:  [LLMProvider] { registry.activeProviders.filter { $0.notchWing == .left } }
-    // RIGHT wing: Claude Code, Anthropic API, ChatGPT, Google
-    private var rightProviders: [LLMProvider] { registry.activeProviders.filter { $0.notchWing == .right } }
+    @State private var iconsVisible: Bool = false
+    @State private var pillExpanded: Bool = false
 
-    // Wing width = exactly enough for n icons with accurate edge paddings, 0 when empty
+    // Dropdown expansion state
+    @State private var isExpanded: Bool = false
+    @State private var contentVisible: Bool = false
+    @State private var isEditMode: Bool = false
+
+    private var isHovered: Bool { registry.isExternalHovered }
+
+    private var targetProviders: [LLMProvider] {
+        if isHovered || isExpanded {
+            return registry.connectedProviders.filter { registry.usageMap[$0] != nil }
+        }
+        return registry.activeProviders
+    }
+
+    private var leftProviders:  [LLMProvider] { targetProviders.filter { $0.notchWing == .left } }
+    private var rightProviders: [LLMProvider] { targetProviders.filter { $0.notchWing == .right } }
+
     private func wingWidth(count: Int) -> CGFloat {
         guard count > 0 else { return 0 }
         return CGFloat(count) * iconSize + CGFloat(count - 1) * iconGap + outerSidePadding + innerSidePadding
     }
 
-    private var leftWingWidth:  CGFloat { wingWidth(count: leftProviders.count) }
-    private var rightWingWidth: CGFloat { wingWidth(count: rightProviders.count) }
+    private var leftWingWidth:  CGFloat { pillExpanded && !isExpanded ? wingWidth(count: leftProviders.count) : 0 }
+    private var rightWingWidth: CGFloat { pillExpanded && !isExpanded ? wingWidth(count: rightProviders.count) : 0 }
     private var pillHeight: CGFloat { geo?.notchHeight ?? 39 }
 
     private var pillWidth: CGFloat {
-        guard let geo else { return 0 }
+        if isExpanded { return expandedWidth }
+        guard let geo else { return geo?.notchWidth ?? 0 }
         return leftWingWidth + geo.notchWidth + rightWingWidth
     }
 
-    // Offset within the full window so pill stays centered on the hardware notch
     private var pillLeadingOffset: CGFloat {
+        if isExpanded { return (geo.map { $0.leftWingWidth + $0.notchWidth + $0.rightWingWidth } ?? expandedWidth) / 2 - expandedWidth / 2 }
         guard let geo else { return 0 }
         return geo.leftWingWidth - leftWingWidth
     }
 
+    // Expanded height = content + notch bar height so the shape grows downward from notch bottom
+    @State private var expandedContentHeight: CGFloat = 200
+
+    private var notchShapeHeight: CGFloat {
+        isExpanded ? pillHeight + expandedContentHeight : pillHeight
+    }
+
+    private var shouldShow: Bool { isHovered || !registry.activeProviders.isEmpty || isExpanded }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Full window anchor — must not intercept clicks below the pill
             Color.clear
                 .frame(width: geo.map { $0.leftWingWidth + $0.notchWidth + $0.rightWingWidth } ?? 580,
                        height: trackNotchWindowHeight)
@@ -51,8 +86,74 @@ struct NotchRootView: View {
             }
         }
         .onAppear {
-            Task { @MainActor in
-                geo = notchGeometry()
+            Task { @MainActor in geo = notchGeometry() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .notchExpandDropdown)) { _ in
+            openExpanded()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .notchCollapseDropdown)) { _ in
+            closeExpanded()
+        }
+        .onChange(of: shouldShow) { show in
+            if show { expand() } else { collapse() }
+        }
+        .onChange(of: targetProviders.count) { _ in
+            if shouldShow && pillExpanded && !isExpanded {
+                iconsVisible = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
+                        iconsVisible = true
+                    }
+                }
+            }
+        }
+    }
+
+    private func expand() {
+        iconsVisible = false
+        pillExpanded = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { pillExpanded = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + iconExpandDelay) {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) { iconsVisible = true }
+            }
+        }
+    }
+
+    private func collapse() {
+        iconsVisible = false
+        let iconsDone = Double(max(leftProviders.count, rightProviders.count)) * staggerStep + 0.30
+        DispatchQueue.main.asyncAfter(deadline: .now() + iconsDone) {
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.85)) { pillExpanded = false }
+        }
+    }
+
+    // MARK: - Toggle expansion (called by NotchWindow on click)
+
+    func openExpanded() {
+        guard !isExpanded else { return }
+        // Fade icons out, then grow shape and fade content in
+        withAnimation(.easeOut(duration: 0.12)) { iconsVisible = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                isExpanded = true
+                pillExpanded = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                withAnimation(.easeOut(duration: 0.2)) { contentVisible = true }
+            }
+        }
+    }
+
+    func closeExpanded() {
+        guard isExpanded else { return }
+        isEditMode = false
+        // Fade content out, then shrink shape back to pill, then restore wing icons
+        withAnimation(.easeInOut(duration: 0.18)) { contentVisible = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+            withAnimation(.spring(response: 0.48, dampingFraction: 0.88)) { isExpanded = false }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+                if shouldShow { expand() }
             }
         }
     }
@@ -61,83 +162,144 @@ struct NotchRootView: View {
 
     @ViewBuilder
     private func pillView(geo: NotchGeometry) -> some View {
-        // Pill and icons both top-aligned to the top of the screen.
-        // Icons are vertically centered within the pill height.
-        ZStack(alignment: .top) {
-            // Black pill background — sits at top, exact notch height
-            NotchShape(topCornerRadius: 6, bottomCornerRadius: 14)
-                .fill(Color.black)
-                .frame(width: pillWidth, height: pillHeight)
-                .shadow(color: .black.opacity(0.5), radius: 8)
+        let totalWidth = geo.leftWingWidth + geo.notchWidth + geo.rightWingWidth
 
-            // Icons — vertically centered inside the pill's height
-            wingContent(geo: geo)
+        ZStack(alignment: .top) {
+            // The single notch shape — animates between pill and expanded card
+            NotchShape(topCornerRadius: isExpanded ? expandedTopRadius : 6,
+                       bottomCornerRadius: isExpanded ? expandedBottomRadius : 14)
+                .fill(Color.black)
+                .frame(width: pillWidth, height: notchShapeHeight)
+                .shadow(color: .black.opacity(isExpanded ? 0.7 : 0.5),
+                        radius: isExpanded ? 24 : 8,
+                        y: isExpanded ? 10 : 0)
+                .animation(.spring(response: 0.45, dampingFraction: 0.82), value: pillWidth)
+                .animation(.spring(response: 0.45, dampingFraction: 0.82), value: notchShapeHeight)
+                .animation(.spring(response: 0.45, dampingFraction: 0.82), value: isExpanded)
+
+            // Wing icons (idle/hover state) — hidden while expanded
+            if iconsVisible && !isExpanded {
+                wingContent(geo: geo)
+                    .frame(width: pillWidth, height: pillHeight)
+            }
+
+            // When expanded: edit (left) and settings (right) flanking the notch.
+            // Use the physical notch width as the centre gap so both buttons
+            // sit symmetrically in the wing zones on either side.
+            if isExpanded {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+
+                    // Edit button — right side of left wing, close to notch
+                    ZStack {
+                        Button(isEditMode ? "done" : "edit") {
+                            isEditMode.toggle()
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.white.opacity(0.12)))
+                        .contentShape(Capsule())
+                    }
+                    .padding(.trailing, 10)
+
+                    // Physical notch gap — tap to close dropdown
+                    Color.white.opacity(0.001)
+                        .frame(width: geo.notchWidth, height: pillHeight)
+                        .contentShape(Rectangle())
+                        .onTapGesture { onToggleDropdown() }
+
+                    // Settings button — left side of right wing, close to notch
+                    ZStack {
+                        Button("settings") {
+                            ConnectionWindowController.shared.open()
+                            onToggleDropdown()
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.white.opacity(0.12)))
+                        .contentShape(Capsule())
+                    }
+                    .padding(.leading, 10)
+
+                    Spacer(minLength: 0)
+                }
                 .frame(width: pillWidth, height: pillHeight)
+                .opacity(contentVisible ? 1 : 0)
+            }
+
+            // Expanded dropdown content — sits below the notch bar inside the shape
+            if isExpanded {
+                VStack(spacing: 0) {
+                    // Spacer for the physical notch bar height
+                    Color.clear.frame(height: pillHeight)
+
+                    DropdownContent(onDismiss: { onToggleDropdown() }, isEditMode: $isEditMode)
+                        .padding(.top, 8)
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, 8)
+                        .opacity(contentVisible ? 1 : 0)
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.onAppear {
+                                    expandedContentHeight = proxy.size.height
+                                }.onChange(of: proxy.size.height) { h in
+                                    expandedContentHeight = h
+                                }
+                            }
+                        )
+                }
+                .frame(width: pillWidth)
+                .clipped()
+            }
         }
-        .frame(width: pillWidth, height: pillHeight)
+        .frame(width: pillWidth, height: notchShapeHeight, alignment: .top)
         .offset(x: pillLeadingOffset)
-        // Pill resizes to follow icons with a slightly slower spring so it trails behind them
-        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: leftProviders.count)
-        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: rightProviders.count)
+        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: pillLeadingOffset)
+        // Pass all events through to StripPanel when collapsed; interactive when expanded
+        .allowsHitTesting(isExpanded)
     }
 
     // MARK: - Wing content
 
-    /// Stagger delay: outermost icon animates first, inward toward the notch.
-    /// Left wing: index 0 is outermost (leftmost) — delay increases right→notch.
-    /// Right wing: index 0 is innermost (closest to notch) — delay increases left→notch,
-    ///             so we reverse: last icon (outermost) gets delay 0.
-    private let staggerStep: Double = 0.06
-
     @ViewBuilder
     private func wingContent(geo: NotchGeometry) -> some View {
         HStack(spacing: 0) {
-            // LEFT wing — icons trailing-aligned, outermost = index 0
             if !leftProviders.isEmpty {
                 HStack(spacing: iconGap) {
                     Spacer(minLength: 0)
                     ForEach(Array(leftProviders.enumerated()), id: \.element) { idx, provider in
                         if let usage = registry.usageMap[provider] {
-                            WingIconView(usage: usage)
-                                .transition(
-                                    .asymmetric(
-                                        insertion: .move(edge: .leading).combined(with: .opacity)
-                                            .animation(.spring(response: 0.38, dampingFraction: 0.78)
-                                                .delay(Double(idx) * staggerStep)),
-                                        removal: .move(edge: .leading).combined(with: .opacity)
-                                            .animation(.spring(response: 0.3, dampingFraction: 0.8)
-                                                .delay(Double(idx) * staggerStep))
-                                    )
-                                )
+                            let expandDelay   = Double(leftProviders.count - 1 - idx) * staggerStep
+                            let collapseDelay = Double(idx) * staggerStep
+                            NotchSlideIcon(usage: usage, direction: .right,
+                                           expandDelay: expandDelay, collapseDelay: collapseDelay,
+                                           isShowing: iconsVisible)
                         }
                     }
                 }
                 .padding(.leading, outerSidePadding)
                 .padding(.trailing, innerSidePadding)
                 .frame(width: leftWingWidth, height: pillHeight, alignment: .center)
+                .clipped()
             }
 
-            // Hardware notch gap
-            Color.clear
-                .frame(width: geo.notchWidth, height: pillHeight)
+            Color.clear.frame(width: geo.notchWidth, height: pillHeight)
 
-            // RIGHT wing — icons leading-aligned, outermost = last index
             if !rightProviders.isEmpty {
                 HStack(spacing: iconGap) {
                     ForEach(Array(rightProviders.enumerated()), id: \.element) { idx, provider in
                         if let usage = registry.usageMap[provider] {
-                            let outerIdx = rightProviders.count - 1 - idx  // 0 = outermost
-                            WingIconView(usage: usage)
-                                .transition(
-                                    .asymmetric(
-                                        insertion: .move(edge: .trailing).combined(with: .opacity)
-                                            .animation(.spring(response: 0.38, dampingFraction: 0.78)
-                                                .delay(Double(outerIdx) * staggerStep)),
-                                        removal: .move(edge: .trailing).combined(with: .opacity)
-                                            .animation(.spring(response: 0.3, dampingFraction: 0.8)
-                                                .delay(Double(outerIdx) * staggerStep))
-                                    )
-                                )
+                            let expandDelay   = Double(idx) * staggerStep
+                            let collapseDelay = Double(rightProviders.count - 1 - idx) * staggerStep
+                            NotchSlideIcon(usage: usage, direction: .left,
+                                           expandDelay: expandDelay, collapseDelay: collapseDelay,
+                                           isShowing: iconsVisible)
                         }
                     }
                     Spacer(minLength: 0)
@@ -145,12 +307,51 @@ struct NotchRootView: View {
                 .padding(.leading, innerSidePadding)
                 .padding(.trailing, outerSidePadding)
                 .frame(width: rightWingWidth, height: pillHeight, alignment: .center)
+                .clipped()
             }
         }
     }
 }
 
-// MARK: - Preview
+// MARK: - NotchSlideIcon
+
+private enum SlideDirection { case left, right }
+
+private struct NotchSlideIcon: View {
+    let usage: ProviderUsage
+    let direction: SlideDirection
+    let expandDelay: Double
+    let collapseDelay: Double
+    let isShowing: Bool
+
+    @State private var visible = false
+    private let slideDistance: CGFloat = 36
+
+    private var hiddenOffset: CGFloat {
+        direction == .right ? slideDistance : -slideDistance
+    }
+
+    var body: some View {
+        WingIconView(usage: usage)
+            .opacity(visible ? 1 : 0)
+            .offset(x: visible ? 0 : hiddenOffset)
+            .onAppear {
+                visible = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + expandDelay) {
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) { visible = true }
+                }
+            }
+            .onChange(of: isShowing) { showing in
+                if !showing {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + collapseDelay) {
+                        withAnimation(.spring(response: 0.26, dampingFraction: 0.84)) { visible = false }
+                    }
+                }
+            }
+    }
+}
+
+// MARK: - Previews
 
 #Preview("Pill shape") {
     ZStack(alignment: .top) {

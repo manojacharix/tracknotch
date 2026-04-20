@@ -8,7 +8,8 @@ final class CursorMonitor: ObservableObject {
     static let shared = CursorMonitor()
 
     @Published private(set) var isInstalled = false
-    @Published private(set) var totalGenerations: Int = 0
+    @Published private(set) var monthlyGenerations: Int = 0
+    @Published private(set) var todayGenerations: Int = 0
     @Published private(set) var totalConversations: Int = 0
     @Published private(set) var modelBreakdown: [ModelUsage] = []
     @Published private(set) var isActivelyConsuming = false
@@ -50,7 +51,10 @@ final class CursorMonitor: ObservableObject {
     // MARK: - Detection
 
     private func checkInstalled() {
-        isInstalled = FileManager.default.fileExists(atPath: dbPath)
+        let fm = FileManager.default
+        let appInstalled = fm.fileExists(atPath: "/Applications/Cursor.app")
+                        || fm.fileExists(atPath: "\(NSHomeDirectory())/Applications/Cursor.app")
+        isInstalled = appInstalled && fm.fileExists(atPath: dbPath)
     }
 
     private func markActivity() {
@@ -100,18 +104,24 @@ final class CursorMonitor: ObservableObject {
               let db = db else { return }
         defer { sqlite3_close(db) }
 
-        let prevGenerations = totalGenerations
+        let prevGenerations = monthlyGenerations
 
-        // Count total AI code generations
-        totalGenerations = queryInt(db, "SELECT COUNT(*) FROM ai_code_hashes")
+        // Count AI code generations for the current calendar month only.
+        // createdAt is stored as Unix milliseconds.
+        let monthStartMs = Self.currentMonthStartMs()
+        let dayStartMs   = Self.currentDayStartMs()
+        monthlyGenerations = queryInt(db,
+            "SELECT COUNT(*) FROM ai_code_hashes WHERE createdAt >= \(monthStartMs)")
+        todayGenerations = queryInt(db,
+            "SELECT COUNT(*) FROM ai_code_hashes WHERE createdAt >= \(dayStartMs)")
 
         // Count conversations
         totalConversations = queryInt(db, "SELECT COUNT(*) FROM conversation_summaries")
 
-        // Model breakdown from ai_code_hashes
+        // Model breakdown from ai_code_hashes — current month only
         var breakdown: [String: Int] = [:]
         var stmt: OpaquePointer?
-        let sql = "SELECT COALESCE(model, 'unknown'), COUNT(*) FROM ai_code_hashes GROUP BY model"
+        let sql = "SELECT COALESCE(model, 'unknown'), COUNT(*) FROM ai_code_hashes WHERE createdAt >= \(monthStartMs) GROUP BY model"
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             while sqlite3_step(stmt) == SQLITE_ROW {
                 let model = String(cString: sqlite3_column_text(stmt, 0))
@@ -125,8 +135,23 @@ final class CursorMonitor: ObservableObject {
             .sorted { $0.tokensUsed > $1.tokensUsed }
 
         // Skip the initial read so pre-existing DB records don't falsely trigger activity
-        if !isFirstRead && totalGenerations > prevGenerations { markActivity() }
+        if !isFirstRead && monthlyGenerations > prevGenerations { markActivity() }
         isFirstRead = false
+    }
+
+    /// Returns the Unix timestamp in milliseconds for the start of the current calendar month.
+    private static func currentMonthStartMs() -> Int64 {
+        let cal = Calendar.current
+        let now = Date()
+        let components = cal.dateComponents([.year, .month], from: now)
+        let monthStart = cal.date(from: components) ?? now
+        return Int64(monthStart.timeIntervalSince1970 * 1000)
+    }
+
+    /// Returns the Unix timestamp in milliseconds for the start of today.
+    private static func currentDayStartMs() -> Int64 {
+        let dayStart = Calendar.current.startOfDay(for: Date())
+        return Int64(dayStart.timeIntervalSince1970 * 1000)
     }
 
     private func queryInt(_ db: OpaquePointer, _ sql: String) -> Int {
@@ -141,17 +166,18 @@ final class CursorMonitor: ObservableObject {
 
     func toProviderUsage() -> ProviderUsage {
         let plan = AppSettings.shared.cursorPlanTier
-        let cap = plan.monthlyFastRequestCap
-        let pct = cap > 0 ? min(Double(totalGenerations) / Double(cap) * 100, 100) : 0
+        // Arc shows today's requests vs daily budget (monthly cap / 30).
+        let dailyCap = max(1, plan.monthlyFastRequestCap / 30)
+        let pct = min(Double(todayGenerations) / Double(dailyCap) * 100, 100)
 
         return ProviderUsage(
             provider: .cursorIDE,
             billingType: .subscription,
-            window: .monthly,
+            window: .daily,
             percentage: pct,
             resetsAt: nil,
-            tokensUsed: totalGenerations,
-            tokensLimit: cap,
+            tokensUsed: todayGenerations,
+            tokensLimit: dailyCap,
             costUsedUSD: nil,
             costLimitUSD: nil,
             modelBreakdown: modelBreakdown,

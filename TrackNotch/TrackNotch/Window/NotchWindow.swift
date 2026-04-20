@@ -8,6 +8,8 @@ import SwiftUI
 private final class StripPanel: NSPanel {
 
     var onNotchClick: (() -> Void)?
+    var onHoverEnter: (() -> Void)?
+    var onHoverExit:  (() -> Void)?
 
     init(frame: NSRect) {
         super.init(
@@ -24,8 +26,11 @@ private final class StripPanel: NSPanel {
         level                = .mainMenu + 3
         ignoresMouseEvents   = false
         collectionBehavior   = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
-        contentView          = StripView()
-        (contentView as? StripView)?.onNotchClick = { [weak self] in self?.onNotchClick?() }
+        let sv = StripView()
+        sv.onNotchClick = { [weak self] in self?.onNotchClick?() }
+        sv.onHoverEnter = { [weak self] in self?.onHoverEnter?() }
+        sv.onHoverExit  = { [weak self] in self?.onHoverExit?() }
+        contentView = sv
     }
 
     override var canBecomeKey: Bool  { false }
@@ -34,12 +39,35 @@ private final class StripPanel: NSPanel {
 
 private final class StripView: NSView {
     var onNotchClick: (() -> Void)?
+    var onHoverEnter: (() -> Void)?
+    var onHoverExit:  (() -> Void)?
 
-    override func mouseUp(with event: NSEvent) { onNotchClick?() }
-    override var acceptsFirstResponder: Bool   { true }
-    override var mouseDownCanMoveWindow: Bool  { false }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateTrackingArea()
+    }
 
-    // Accept every point — the window is already strip-sized
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        updateTrackingArea()
+    }
+
+    private func updateTrackingArea() {
+        trackingAreas.forEach { removeTrackingArea($0) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) { onHoverEnter?() }
+    override func mouseExited(with event: NSEvent)  { onHoverExit?() }
+    override func mouseUp(with event: NSEvent)      { onNotchClick?() }
+    override var acceptsFirstResponder: Bool        { true }
+    override var mouseDownCanMoveWindow: Bool       { false }
+
     override func hitTest(_ point: NSPoint) -> NSView? { self }
 }
 
@@ -52,9 +80,14 @@ final class NotchWindow: NSPanel {
     let targetScreen: NSScreen
     let mode: NotchMode
     private(set) var isDropdownVisible = false
-    private var dropdownWindow: DropdownWindow?
     private var stripPanel: StripPanel?
     private var externalClickMonitor: Any?
+    private var externalHoverMonitor: Any?
+    private var hoverLeaveTimer: Timer?
+    private var outsideClickMonitor: Any?
+
+    /// Weak ref to the SwiftUI root so we can call open/closeExpanded()
+    weak var rootViewController: NotchRootViewController?
 
     init(screen: NSScreen, mode: NotchMode) {
         self.targetScreen = screen
@@ -111,15 +144,20 @@ final class NotchWindow: NSPanel {
             let view = AnyView(
                 ExternalMonitorView()
                     .environmentObject(ProviderRegistry.shared)
-                    .allowsHitTesting(false)
+                    .environmentObject(AppSettings.shared)
             )
             hostingView = NSHostingView(rootView: view)
         } else {
+            let vc = NotchRootViewController(mode: mode, onToggleDropdown: { [weak self] in
+                self?.toggleDropdown()
+            })
+            rootViewController = vc
             let view = AnyView(
-                NotchRootView(mode: mode, onToggleDropdown: { [weak self] in self?.toggleDropdown() })
-                    .environmentObject(ProviderRegistry.shared)
-                    .environmentObject(AppSettings.shared)
-                    .allowsHitTesting(false)
+                NotchRootView(mode: mode, onToggleDropdown: { [weak self] in
+                    self?.toggleDropdown()
+                })
+                .environmentObject(ProviderRegistry.shared)
+                .environmentObject(AppSettings.shared)
             )
             hostingView = NSHostingView(rootView: view)
         }
@@ -131,18 +169,39 @@ final class NotchWindow: NSPanel {
         contentView?.layer?.masksToBounds = false
     }
 
-    /// For external monitor mode: global monitor checks if click lands in the pill rect.
-    /// The window stays fully click-through; we just observe and react.
+    /// For external monitor mode: global monitors observe clicks and mouse movement.
     private func installExternalClickMonitor() {
         externalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self, let cg = event.cgEvent else { return }
-            let pt = NSPoint(x: cg.location.x, y: cg.location.y)
-            guard self.frame.contains(pt) else { return }
-            // Only toggle if providers are active (pill is visible)
-            guard !ProviderRegistry.shared.activeProviders.isEmpty else { return }
+            let primaryH = NSScreen.screens.first.map { $0.frame.height } ?? 0
+            let appKitPt = NSPoint(x: cg.location.x, y: primaryH - cg.location.y)
+            guard self.hoverRect.contains(appKitPt) else { return }
+            let reg = ProviderRegistry.shared
+            guard !reg.activeProviders.isEmpty || reg.isExternalHovered else { return }
             DispatchQueue.main.async {
                 self.haptic()
                 self.toggleDropdown()
+            }
+        }
+
+        externalHoverMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+            guard let self, let cg = event.cgEvent else { return }
+            let primaryH = NSScreen.screens.first.map { $0.frame.height } ?? 0
+            let appKitPt = NSPoint(x: cg.location.x, y: primaryH - cg.location.y)
+            let inside = self.hoverRect.contains(appKitPt)
+            DispatchQueue.main.async { self.updateHoverState(inside: inside) }
+        }
+    }
+
+    private func updateHoverState(inside: Bool) {
+        hoverLeaveTimer?.invalidate()
+        hoverLeaveTimer = nil
+        if inside {
+            if !ProviderRegistry.shared.isExternalHovered { haptic() }
+            ProviderRegistry.shared.isExternalHovered = true
+        } else {
+            hoverLeaveTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { _ in
+                ProviderRegistry.shared.isExternalHovered = false
             }
         }
     }
@@ -153,6 +212,13 @@ final class NotchWindow: NSPanel {
             self?.haptic()
             self?.toggleDropdown()
         }
+        strip.onHoverEnter = { [weak self] in
+            self?.haptic()
+            ProviderRegistry.shared.isExternalHovered = true
+        }
+        strip.onHoverExit = {
+            ProviderRegistry.shared.isExternalHovered = false
+        }
         strip.orderFrontRegardless()
         stripPanel = strip
     }
@@ -161,11 +227,15 @@ final class NotchWindow: NSPanel {
         stripPanel?.close()
         stripPanel = nil
         if let m = externalClickMonitor { NSEvent.removeMonitor(m); externalClickMonitor = nil }
-        closeDropdown()
+        if let m = externalHoverMonitor { NSEvent.removeMonitor(m); externalHoverMonitor = nil }
+        if let m = outsideClickMonitor  { NSEvent.removeMonitor(m); outsideClickMonitor  = nil }
+        hoverLeaveTimer?.invalidate()
+        hoverLeaveTimer = nil
+        ProviderRegistry.shared.isExternalHovered = false
         super.close()
     }
 
-    // MARK: - Strip rect (screen coordinates, notch height only)
+    // MARK: - Strip rect
 
     private var stripRect: NSRect {
         let sf          = targetScreen.frame
@@ -178,16 +248,26 @@ final class NotchWindow: NSPanel {
         )
     }
 
-    // MARK: - Haptic
+    // MARK: - Hover rect (external mode)
 
-    private func haptic() {
-        NSHapticFeedbackManager.defaultPerformer.perform(
-            .levelChange,
-            performanceTime: .now
+    private let externalHoverWidth: CGFloat = 200
+
+    private var hoverRect: NSRect {
+        NSRect(
+            x: frame.midX - externalHoverWidth / 2,
+            y: frame.origin.y,
+            width: externalHoverWidth,
+            height: frame.height
         )
     }
 
-    // MARK: - Dropdown
+    // MARK: - Haptic
+
+    private func haptic() {
+        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+    }
+
+    // MARK: - Dropdown (now expands in-place inside NotchWindow)
 
     func toggleDropdown() {
         isDropdownVisible ? closeDropdown() : openDropdown()
@@ -195,26 +275,57 @@ final class NotchWindow: NSPanel {
 
     private func openDropdown() {
         isDropdownVisible = true
-        let sf    = targetScreen.frame
-        let dw: CGFloat = 280
-        let dh: CGFloat = 400
-        let dx = sf.origin.x + (sf.width - dw) / 2
-        let dy = sf.origin.y + sf.height - getNotchBlockSize(screen: targetScreen).height - dh
 
-        let dropdown = DropdownWindow(wingFrame: NSRect(x: dx, y: dy + dh, width: dw, height: 37))
-        dropdown.present(onDismiss: { [weak self] in
-            self?.isDropdownVisible = false
-            self?.dropdownWindow    = nil
-        })
-        dropdownWindow = dropdown
-        addChildWindow(dropdown, ordered: .below)
+        // For external/notchless: grow window tall enough for dropdown
+        if mode.isExternal {
+            let sf = targetScreen.frame
+            let expandedH: CGFloat = trackNotchWindowHeight
+            let newFrame = NSRect(
+                x: frame.origin.x,
+                y: sf.origin.y + sf.height - expandedH,
+                width: frame.width,
+                height: expandedH
+            )
+            setFrame(newFrame, display: true)
+        }
+
+        // Allow hit-testing and make key so SwiftUI buttons fire correctly
+        ignoresMouseEvents = false
+        stripPanel?.ignoresMouseEvents = true
+        makeKeyAndOrderFront(nil)
+
+        // Tell SwiftUI view to expand
+        NotificationCenter.default.post(name: .notchExpandDropdown, object: nil)
+
+        // Dismiss when user clicks outside the notch panel.
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self, let cg = event.cgEvent else { return }
+            let screenH = NSScreen.screens.first.map { $0.frame.height } ?? 0
+            let appKitPt = NSPoint(x: cg.location.x, y: screenH - cg.location.y)
+            if !self.frame.contains(appKitPt) {
+                DispatchQueue.main.async { self.closeDropdown() }
+            }
+        }
     }
 
     private func closeDropdown() {
-        dropdownWindow?.dismissWindow(onDismiss: { [weak self] in
-            self?.isDropdownVisible = false
-            self?.dropdownWindow    = nil
-        })
+        isDropdownVisible = false
+        ignoresMouseEvents = true
+        stripPanel?.ignoresMouseEvents = false
+        if isKeyWindow { resignKey() }
+
+        if let m = outsideClickMonitor {
+            NSEvent.removeMonitor(m)
+            outsideClickMonitor = nil
+        }
+
+        NotificationCenter.default.post(name: .notchCollapseDropdown, object: nil)
+
+        // For external/notchless: shrink window back to original size
+        if mode.isExternal {
+            let smallFrame = externalPanelFrame(screen: targetScreen)
+            setFrame(smallFrame, display: true)
+        }
     }
 
     // MARK: - Public
@@ -229,7 +340,25 @@ final class NotchWindow: NSPanel {
         stripPanel?.orderFrontRegardless()
     }
 
-    override var canBecomeKey: Bool          { false }
+    override var canBecomeKey: Bool          { isDropdownVisible }
     override var canBecomeMain: Bool         { false }
-    override var acceptsFirstResponder: Bool { false }
+    override var acceptsFirstResponder: Bool { isDropdownVisible }
+}
+
+// MARK: - Notification names
+
+extension Notification.Name {
+    static let notchExpandDropdown   = Notification.Name("notchExpandDropdown")
+    static let notchCollapseDropdown = Notification.Name("notchCollapseDropdown")
+}
+
+// MARK: - Thin VC shim (unused — kept for potential future imperative access)
+
+final class NotchRootViewController {
+    let mode: NotchMode
+    let onToggleDropdown: () -> Void
+    init(mode: NotchMode, onToggleDropdown: @escaping () -> Void) {
+        self.mode = mode
+        self.onToggleDropdown = onToggleDropdown
+    }
 }

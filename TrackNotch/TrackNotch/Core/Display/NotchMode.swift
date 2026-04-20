@@ -26,7 +26,9 @@ enum NotchMode {
     }
 
     var isHardware: Bool { self == .hardwareNotch }
-    var isExternal: Bool { self == .externalMonitor }
+    /// True for any display that has no physical notch — both external monitors
+    /// and notchless built-in displays use the floating dot/pill UI.
+    var isExternal: Bool { self == .externalMonitor || self == .softwareNotch }
 }
 
 // MARK: - Sizing helpers (mirrors agentnotch NotchSizing)
@@ -102,15 +104,16 @@ func notchPanelFrame(screen: NSScreen? = nil) -> NSRect {
     notchGeometry(screen: screen).windowFrame
 }
 
-/// Frame for the external monitor floating dot/icon panel.
-/// Centered horizontally at the top of the screen, tall enough for icons + dot animation.
+/// Frame for the external/notchless monitor panel.
+/// Same height as notch panel so dropdown can expand within it.
 let externalPanelWidth:  CGFloat = 600
-let externalPanelHeight: CGFloat = 56
+let externalPanelHeight: CGFloat = 56  // legacy — kept for reference
 
 @MainActor
 func externalPanelFrame(screen: NSScreen) -> NSRect {
     let sf = screen.frame
-    let x  = sf.origin.x + (sf.width - externalPanelWidth) / 2
-    let y  = sf.origin.y + sf.height - externalPanelHeight
-    return NSRect(x: x, y: y, width: externalPanelWidth, height: externalPanelHeight)
+    let x  = sf.origin.x + (sf.width - trackNotchWindowWidth) / 2
+    let y  = sf.origin.y + sf.height - trackNotchWindowHeight
+    return NSRect(x: x, y: y, width: trackNotchWindowWidth, height: trackNotchWindowHeight)
 }
+

@@ -23,9 +23,10 @@ final class ProviderRegistry: ObservableObject {
     private static let orderKey = "providerOrder"
     private var cancellables = Set<AnyCancellable>()
 
-    /// Linger timers: keep a provider visible for 2s after it stops actively consuming,
-    /// smoothing over the 1s poll gap so icons don't flicker in and out.
-    private static let lingerDuration: TimeInterval = 2
+    /// Linger timers: keep a provider visible after it stops actively consuming.
+    /// 6s gives enough runway to bridge polling gaps and the full collapse animation
+    /// without the icon flickering out mid-session.
+    private static let lingerDuration: TimeInterval = 6
     private var lingerTimers: [LLMProvider: Timer] = [:]
     @Published private var lingering: Set<LLMProvider> = []
 
@@ -52,10 +53,10 @@ final class ProviderRegistry: ObservableObject {
             markAutoConnected(.claudeCode)
             updateUsage(cc.toProviderUsage())
             cc.objectWillChange.sink { [weak self] _ in
-                Task { @MainActor in
-                    self?.updateUsage(cc.toProviderUsage())
-                }
+                Task { @MainActor in self?.updateUsage(cc.toProviderUsage()) }
             }.store(in: &cancellables)
+        } else {
+            evictStaleConnection(.claudeCode)
         }
 
         // Codex
@@ -65,10 +66,10 @@ final class ProviderRegistry: ObservableObject {
             markAutoConnected(.codex)
             updateUsage(cx.toProviderUsage())
             cx.objectWillChange.sink { [weak self] _ in
-                Task { @MainActor in
-                    self?.updateUsage(cx.toProviderUsage())
-                }
+                Task { @MainActor in self?.updateUsage(cx.toProviderUsage()) }
             }.store(in: &cancellables)
+        } else {
+            evictStaleConnection(.codex)
         }
 
         // Cursor
@@ -78,10 +79,10 @@ final class ProviderRegistry: ObservableObject {
             markAutoConnected(.cursorIDE)
             updateUsage(cu.toProviderUsage())
             cu.objectWillChange.sink { [weak self] _ in
-                Task { @MainActor in
-                    self?.updateUsage(cu.toProviderUsage())
-                }
+                Task { @MainActor in self?.updateUsage(cu.toProviderUsage()) }
             }.store(in: &cancellables)
+        } else {
+            evictStaleConnection(.cursorIDE)
         }
 
         // ChatGPT Desktop
@@ -91,19 +92,29 @@ final class ProviderRegistry: ObservableObject {
             markAutoConnected(.chatGPTDesktop)
             updateUsage(cd.toProviderUsage())
             cd.objectWillChange.sink { [weak self] _ in
-                Task { @MainActor in
-                    self?.updateUsage(cd.toProviderUsage())
-                }
+                Task { @MainActor in self?.updateUsage(cd.toProviderUsage()) }
             }.store(in: &cancellables)
+        } else {
+            evictStaleConnection(.chatGPTDesktop)
         }
+    }
+
+    /// Clears any stale persisted connection state for a provider that failed install detection.
+    /// Prevents previously-connected providers from reappearing after uninstall.
+    private func evictStaleConnection(_ provider: LLMProvider) {
+        connectionStates[provider] = .notConfigured
+        ProviderAuthManager.shared.connectionStates[provider] = .notConfigured
+        usageMap.removeValue(forKey: provider)
     }
 
     private func startAPIFetchers() {
         // Only start if an API key is already saved
         if ProviderAuthManager.shared.loadAPIKey(for: .openAIAPI) != nil {
+            connectionStates[.openAIAPI] = .connected
             OpenAIUsageFetcher.shared.start()
         }
         if ProviderAuthManager.shared.loadAPIKey(for: .anthropicAPI) != nil {
+            connectionStates[.anthropicAPI] = .connected
             AnthropicUsageFetcher.shared.start()
         }
     }
@@ -114,6 +125,9 @@ final class ProviderRegistry: ObservableObject {
     }
 
     // MARK: - Active Providers (for wing display)
+
+    /// True while the cursor is hovering over the external monitor panel.
+    @Published var isExternalHovered: Bool = false
 
     /// Providers actively consuming OR still within the 2s linger window after going idle.
     var activeProviders: [LLMProvider] {

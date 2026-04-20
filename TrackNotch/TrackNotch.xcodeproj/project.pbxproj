@@ -25,7 +25,6 @@
 		4F12AED0BC9184B8913D56E2 /* CursorMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA6E6FB9A0DCA9E5DF76CD4F /* CursorMonitor.swift */; };
 		60F71CA6A2E21ED3AABD8357 /* NotchWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE7D8D5DA89FE486ADF4B218 /* NotchWindow.swift */; };
 		61932BFA2FC6C547E3DEF7D6 /* codex-mono.svg in Resources */ = {isa = PBXBuildFile; fileRef = 865A3620C5748C7427B6A5DA /* codex-mono.svg */; };
-		63481A891010EC66DC0A3D9C /* DropdownWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC68CFEB1C961FA6FB60D057 /* DropdownWindow.swift */; };
 		83A0909B2C307FB33ED977A5 /* claude-mono.svg in Resources */ = {isa = PBXBuildFile; fileRef = 31231A546DCEC33B5915CF2E /* claude-mono.svg */; };
 		852EA86C806542D9B8845984 /* TrackNotchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9F42D366CC7C5118C77BCC7 /* TrackNotchApp.swift */; };
 		8DDBE3044336697EEE1E383C /* google-mono.svg in Resources */ = {isa = PBXBuildFile; fileRef = 74C7AE8194D2DF8058456605 /* google-mono.svg */; };
@@ -82,7 +81,6 @@
 		E2F4BEC99C394A6002AB460C /* openai-mono.svg */ = {isa = PBXFileReference; path = "openai-mono.svg"; sourceTree = "<group>"; };
 		E39B8567D8CA8B1BC2120FF2 /* ArrowTickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArrowTickerView.swift; sourceTree = "<group>"; };
 		E44917DBCCE4D9F1F41EA129 /* NotchMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchMode.swift; sourceTree = "<group>"; };
-		EC68CFEB1C961FA6FB60D057 /* DropdownWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropdownWindow.swift; sourceTree = "<group>"; };
 		F82CD021E43F00C2021D404E /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		FC6C26B0285405FE3889855E /* ProviderConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderConnectionView.swift; sourceTree = "<group>"; };
 		FF4EA0210E889D874E7AAD5B /* ProviderAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderAuthManager.swift; sourceTree = "<group>"; };
@@ -220,7 +218,6 @@
 			isa = PBXGroup;
 			children = (
 				8693DC56EFB0C0F195B69726 /* ConnectionWindow.swift */,
-				EC68CFEB1C961FA6FB60D057 /* DropdownWindow.swift */,
 				CE7D8D5DA89FE486ADF4B218 /* NotchWindow.swift */,
 			);
 			path = Window;
@@ -367,7 +364,6 @@
 				4F12AED0BC9184B8913D56E2 /* CursorMonitor.swift in Sources */,
 				E95F04690427E5D41DFF96BD /* DisplayCoordinator.swift in Sources */,
 				D8D7E7F91B2F9D16B33ED5CB /* DropdownPanelView.swift in Sources */,
-				63481A891010EC66DC0A3D9C /* DropdownWindow.swift in Sources */,
 				BD308B2E1E86CD4D86FE61EE /* EditModeRow.swift in Sources */,
 				2D1EC2A00FB93DE39431D8BE /* NotchGlowBorder.swift in Sources */,
 				A1B2C3D4E5F6A7B8C9D0E1F2 /* ExternalMonitorView.swift in Sources */,

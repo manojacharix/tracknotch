@@ -8,6 +8,11 @@ final class AppSettings: ObservableObject {
     @Published var idleCollapseTimeout: IdleTimeout = .thirtyMinutes
     @Published var launchAtLogin: Bool = false
 
+    /// Context window size for the arc. Default 200K = Sonnet. Set to 1M for Opus.
+    @Published var claudeContextLimit: Int {
+        didSet { UserDefaults.standard.set(claudeContextLimit, forKey: "claudeContextLimit") }
+    }
+
     // Plan tiers for subscription providers
     @Published var claudePlanTier: ClaudePlanTier {
         didSet { UserDefaults.standard.set(claudePlanTier.rawValue, forKey: "claudePlanTier") }
@@ -28,6 +33,7 @@ final class AppSettings: ObservableObject {
     }
 
     private init() {
+        claudeContextLimit = UserDefaults.standard.object(forKey: "claudeContextLimit") as? Int ?? 200_000
         claudePlanTier = ClaudePlanTier(rawValue: UserDefaults.standard.string(forKey: "claudePlanTier") ?? "") ?? .pro
         chatGPTPlanTier = ChatGPTPlanTier(rawValue: UserDefaults.standard.string(forKey: "chatGPTPlanTier") ?? "") ?? .plus
         cursorPlanTier = CursorPlanTier(rawValue: UserDefaults.standard.string(forKey: "cursorPlanTier") ?? "") ?? .pro
@@ -46,6 +52,19 @@ enum ClaudePlanTier: String, CaseIterable, Identifiable {
     case team = "Team"
 
     var id: String { rawValue }
+
+    /// Daily output-token reference for the arc.
+    /// Based on observed typical output budgets per plan — output tokens are
+    /// the real measure of work done (cache reads inflate totals without new generation).
+    var dailyOutputTokenCap: Int {
+        switch self {
+        case .free:  return 20_000
+        case .pro:   return 100_000
+        case .max5:  return 500_000
+        case .max20: return 2_000_000
+        case .team:  return 200_000
+        }
+    }
 
     /// Weekly token cap for the plan (approximate, based on public info)
     var weeklyTokenCap: Int {
