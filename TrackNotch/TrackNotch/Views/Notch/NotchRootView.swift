@@ -13,7 +13,7 @@ private let pillCollapseDelay: Double = 0.18
 private let staggerStep:       Double = 0.05
 
 // Expanded notch dimensions
-private let expandedWidth:  CGFloat = 380
+private let expandedMaxWidth:  CGFloat = 380
 private let expandedTopRadius:    CGFloat = 10
 private let expandedBottomRadius: CGFloat = 26
 
@@ -31,6 +31,13 @@ struct NotchRootView: View {
     @State private var isExpanded: Bool = false
     @State private var contentVisible: Bool = false
     @State private var isEditMode: Bool = false
+    @State private var transitionNonce: Int = 0
+    @State private var expandIconsWork: DispatchWorkItem? = nil
+    @State private var collapsePillWork: DispatchWorkItem? = nil
+    @State private var openExpandWork: DispatchWorkItem? = nil
+    @State private var openContentWork: DispatchWorkItem? = nil
+    @State private var closeCollapseWork: DispatchWorkItem? = nil
+    @State private var closeRestoreWork: DispatchWorkItem? = nil
 
     private var isHovered: Bool { registry.isExternalHovered }
 
@@ -54,13 +61,13 @@ struct NotchRootView: View {
     private var pillHeight: CGFloat { geo?.notchHeight ?? 39 }
 
     private var pillWidth: CGFloat {
-        if isExpanded { return expandedWidth }
+        if isExpanded { return expandedMaxWidth }
         guard let geo else { return geo?.notchWidth ?? 0 }
         return leftWingWidth + geo.notchWidth + rightWingWidth
     }
 
     private var pillLeadingOffset: CGFloat {
-        if isExpanded { return (geo.map { $0.leftWingWidth + $0.notchWidth + $0.rightWingWidth } ?? expandedWidth) / 2 - expandedWidth / 2 }
+        if isExpanded { return (geo.map { $0.leftWingWidth + $0.notchWidth + $0.rightWingWidth } ?? expandedMaxWidth) / 2 - expandedMaxWidth / 2 }
         guard let geo else { return 0 }
         return geo.leftWingWidth - leftWingWidth
     }
@@ -89,9 +96,11 @@ struct NotchRootView: View {
             Task { @MainActor in geo = notchGeometry() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchExpandDropdown)) { _ in
+            NSLog("[NotchRootView] received notchExpandDropdown notification")
             openExpanded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchCollapseDropdown)) { _ in
+            NSLog("[NotchRootView] received notchCollapseDropdown notification")
             closeExpanded()
         }
         .onChange(of: shouldShow) { show in
@@ -110,52 +119,105 @@ struct NotchRootView: View {
     }
 
     private func expand() {
+        cancelPendingWork()
+        let nonce = beginTransition()
         iconsVisible = false
         pillExpanded = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
-            withAnimation(.interactiveSpring(response: 0.38, dampingFraction: 0.82, blendDuration: 0.1)) { pillExpanded = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + iconExpandDelay) {
-                withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.78, blendDuration: 0.08)) { iconsVisible = true }
-            }
+        withAnimation(.interactiveSpring(response: 0.38, dampingFraction: 0.82, blendDuration: 0.1)) { pillExpanded = true }
+        let work = DispatchWorkItem {
+            guard transitionNonce == nonce else { return }
+            withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.78, blendDuration: 0.08)) { iconsVisible = true }
         }
+        expandIconsWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + iconExpandDelay, execute: work)
     }
 
     private func collapse() {
-        iconsVisible = false
-        let iconsDone = Double(max(leftProviders.count, rightProviders.count)) * staggerStep + 0.30
-        DispatchQueue.main.asyncAfter(deadline: .now() + iconsDone) {
-            withAnimation(.interactiveSpring(response: 0.42, dampingFraction: 0.85, blendDuration: 0.1)) { pillExpanded = false }
+        cancelPendingWork()
+        let nonce = beginTransition()
+        // Step 1: dissolve icons in place (opacity fade, no movement)
+        withAnimation(.easeOut(duration: 0.25)) {
+            iconsVisible = false
         }
+        // Step 2: after icons fully dissolve, shrink pill back into notch
+        let work = DispatchWorkItem {
+            guard transitionNonce == nonce else { return }
+            withAnimation(.easeInOut(duration: 0.30)) {
+                pillExpanded = false
+            }
+        }
+        collapsePillWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.30, execute: work)
     }
 
     // MARK: - Toggle expansion (called by NotchWindow on click)
 
     func openExpanded() {
-        guard !isExpanded else { return }
+        NSLog("[NotchRootView] openExpanded called: isExpanded=\(isExpanded), contentVisible=\(contentVisible)")
+        cancelPendingWork()
+        let nonce = beginTransition()
+        // Already fully expanded with content visible — no-op
+        if isExpanded && contentVisible { return }
         // Fade icons out, then grow shape and fade content in
         withAnimation(.easeOut(duration: 0.12)) { iconsVisible = false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
+        let expandWork = DispatchWorkItem { [self] in
+            guard transitionNonce == nonce else { return }
             withAnimation(.interactiveSpring(response: 0.5, dampingFraction: 0.85, blendDuration: 0.12)) {
                 isExpanded = true
                 pillExpanded = true
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+            let contentWork = DispatchWorkItem { [self] in
+                guard transitionNonce == nonce else { return }
                 withAnimation(.easeOut(duration: 0.2)) { contentVisible = true }
             }
+            openContentWork = contentWork
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: contentWork)
         }
+        openExpandWork = expandWork
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.10, execute: expandWork)
     }
 
     func closeExpanded() {
+        NSLog("[NotchRootView] closeExpanded called: isExpanded=\(isExpanded)")
         guard isExpanded else { return }
+        cancelPendingWork()
+        let nonce = beginTransition()
         isEditMode = false
         // Fade content out, then shrink shape back to pill, then restore wing icons
         withAnimation(.easeInOut(duration: 0.18)) { contentVisible = false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+        let collapseWork = DispatchWorkItem {
+            guard transitionNonce == nonce else { return }
             withAnimation(.interactiveSpring(response: 0.48, dampingFraction: 0.88, blendDuration: 0.1)) { isExpanded = false }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+            let restoreWork = DispatchWorkItem {
+                guard transitionNonce == nonce else { return }
                 if shouldShow { expand() }
             }
+            closeRestoreWork = restoreWork
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.30, execute: restoreWork)
         }
+        closeCollapseWork = collapseWork
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16, execute: collapseWork)
+    }
+
+    private func cancelPendingWork() {
+        expandIconsWork?.cancel()
+        expandIconsWork = nil
+        collapsePillWork?.cancel()
+        collapsePillWork = nil
+        openExpandWork?.cancel()
+        openExpandWork = nil
+        openContentWork?.cancel()
+        openContentWork = nil
+        closeCollapseWork?.cancel()
+        closeCollapseWork = nil
+        closeRestoreWork?.cancel()
+        closeRestoreWork = nil
+    }
+
+    @discardableResult
+    private func beginTransition() -> Int {
+        transitionNonce += 1
+        return transitionNonce
     }
 
     // MARK: - Pill
@@ -178,9 +240,11 @@ struct NotchRootView: View {
                 .animation(.interactiveSpring(response: 0.45, dampingFraction: 0.82, blendDuration: 0.1), value: isExpanded)
 
             // Wing icons (idle/hover state) — hidden while expanded
-            if iconsVisible && !isExpanded {
+            // Always in tree while pill is expanded so child dissolve animations can play
+            if pillExpanded && !isExpanded {
                 wingContent(geo: geo)
                     .frame(width: pillWidth, height: pillHeight)
+                    .allowsHitTesting(false)
             }
 
             // When expanded: edit (left) and settings (right) flanking the notch.
@@ -209,7 +273,10 @@ struct NotchRootView: View {
                     Color.white.opacity(0.001)
                         .frame(width: geo.notchWidth, height: pillHeight)
                         .contentShape(Rectangle())
-                        .onTapGesture { onToggleDropdown() }
+                        .onTapGesture {
+                            NSLog("[NotchRootView] notch gap tapped — calling onToggleDropdown")
+                            onToggleDropdown()
+                        }
 
                     // Settings button — left side of right wing, close to notch
                     ZStack {
@@ -331,24 +398,30 @@ private struct NotchSlideIcon: View {
         direction == .right ? slideDistance : -slideDistance
     }
 
+    @State private var dissolved = false
+
     var body: some View {
         WingIconView(usage: usage)
-            .opacity(visible ? 1 : 0)
+            .opacity(visible && !dissolved ? 1 : 0)
             .offset(x: visible ? 0 : hiddenOffset)
             .onAppear {
                 visible = false
+                dissolved = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + expandDelay) {
                     withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.78, blendDuration: 0.08)) { visible = true }
                 }
             }
             .onChange(of: isShowing) { showing in
                 if showing {
+                    visible = false
+                    dissolved = false
                     DispatchQueue.main.asyncAfter(deadline: .now() + expandDelay) {
                         withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.78, blendDuration: 0.08)) { visible = true }
                     }
                 } else {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + collapseDelay) {
-                        withAnimation(.interactiveSpring(response: 0.26, dampingFraction: 0.84, blendDuration: 0.06)) { visible = false }
+                    // Dissolve in place (opacity only, no slide)
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        dissolved = true
                     }
                 }
             }
@@ -397,28 +470,4 @@ private struct NotchSlideIcon: View {
     }
     .frame(width: 600, height: 60)
     .background(Color.gray.opacity(0.4))
-}
-
-// MARK: - Pulsing add button
-
-struct PulsingAddButton: View {
-    @State private var isPulsing = false
-
-    var body: some View {
-        Image(systemName: "plus")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundColor(.white.opacity(isPulsing ? 0.9 : 0.35))
-            .frame(width: 20, height: 20)
-            .onAppear {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { pulse() }
-            }
-    }
-
-    private func pulse() {
-        withAnimation(.easeInOut(duration: 0.6)) { isPulsing = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            withAnimation(.easeInOut(duration: 0.6)) { isPulsing = false }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { pulse() }
-    }
 }

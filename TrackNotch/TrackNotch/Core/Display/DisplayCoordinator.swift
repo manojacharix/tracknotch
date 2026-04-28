@@ -8,8 +8,11 @@ import Combine
 final class DisplayCoordinator: ObservableObject {
     static let shared = DisplayCoordinator()
 
-    private var notchWindows: [NSScreen: NotchWindow] = [:]
+    /// Keyed by CGDirectDisplayID so NSScreen object churn (clamshell, reconnect)
+    /// doesn't create duplicate windows for the same physical display.
+    private var notchWindows: [UInt32: NotchWindow] = [:]
     private var screenObserver: Any?
+    private var screenChangeWork: DispatchWorkItem?
 
     private init() {}
 
@@ -23,6 +26,7 @@ final class DisplayCoordinator: ObservableObject {
     func teardown() {
         notchWindows.values.forEach { $0.close() }
         notchWindows.removeAll()
+        screenChangeWork?.cancel()
         if let observer = screenObserver {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -30,22 +34,23 @@ final class DisplayCoordinator: ObservableObject {
 
     // MARK: - Window Management
 
+    private func displayID(for screen: NSScreen) -> UInt32? {
+        screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32
+    }
+
     private func setupWindows() {
-        // In clamshell mode, NSScreen.screens may momentarily include the built-in display.
-        // Only create one window per unique display ID.
-        var seenDisplayIDs = Set<UInt32>()
         for screen in NSScreen.screens {
-            let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32 ?? 0
-            guard seenDisplayIDs.insert(displayID).inserted else { continue }
-            addWindow(for: screen)
+            guard let id = displayID(for: screen), notchWindows[id] == nil else { continue }
+            addWindow(id: id, for: screen)
         }
     }
 
-    private func addWindow(for screen: NSScreen) {
+    private func addWindow(id: UInt32, for screen: NSScreen) {
         let mode = NotchMode.detect(for: screen)
         let window = NotchWindow(screen: screen, mode: mode)
         window.show()
-        notchWindows[screen] = window
+        notchWindows[id] = window
+        print("[Display] Created \(mode) window for display \(id)")
     }
 
     private func observeScreenChanges() {
@@ -54,25 +59,35 @@ final class DisplayCoordinator: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
-                self?.handleScreenChange()
+            // Debounce — macOS fires this multiple times during display transitions
+            self?.screenChangeWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                Task { @MainActor in self?.handleScreenChange() }
             }
+            self?.screenChangeWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
         }
     }
 
     private func handleScreenChange() {
-        // Remove windows for disconnected screens
-        for screen in notchWindows.keys {
-            if !NSScreen.screens.contains(screen) {
-                notchWindows[screen]?.close()
-                notchWindows.removeValue(forKey: screen)
-            }
+        let currentScreens = NSScreen.screens
+        let activeIDs = Set(currentScreens.compactMap { displayID(for: $0) })
+
+        // Remove windows for disconnected displays
+        for id in notchWindows.keys where !activeIDs.contains(id) {
+            print("[Display] Removing window for disconnected display \(id)")
+            notchWindows[id]?.close()
+            notchWindows.removeValue(forKey: id)
         }
 
-        // Add windows for new screens
-        for screen in NSScreen.screens {
-            if notchWindows[screen] == nil {
-                addWindow(for: screen)
+        // Add new windows and reposition existing ones
+        for screen in currentScreens {
+            guard let id = displayID(for: screen) else { continue }
+            if let existingWindow = notchWindows[id] {
+                // Reposition to match updated screen coordinates
+                existingWindow.reposition(to: screen)
+            } else {
+                addWindow(id: id, for: screen)
             }
         }
     }
