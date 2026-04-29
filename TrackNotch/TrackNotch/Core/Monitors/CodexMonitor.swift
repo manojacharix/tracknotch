@@ -26,6 +26,7 @@ final class CodexMonitor: ObservableObject {
     private var dbWatcher: DispatchSourceFileSystemObject?
     private var dbDescriptor: Int32 = -1
     private var scanTimer: Timer?
+    private var debounceWork: DispatchWorkItem?
 
     private init() {}
 
@@ -33,7 +34,7 @@ final class CodexMonitor: ObservableObject {
 
     func start() {
         checkInstalled()
-        guard isInstalled else { print("[Codex] Not installed — skipping start"); return }
+        guard isInstalled else { TNLog.info("[Codex] Not installed — skipping start", category: .monitor); return }
         readDB()
         watchDB()
         scanTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
@@ -72,7 +73,12 @@ final class CodexMonitor: ObservableObject {
             queue: .global(qos: .utility)
         )
         source.setEventHandler { [weak self] in
-            Task { @MainActor in self?.readDB() }
+            self?.debounceWork?.cancel()
+            let work = DispatchWorkItem {
+                Task { @MainActor in self?.readDB() }
+            }
+            self?.debounceWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
         }
         source.setCancelHandler { [weak self] in
             guard let self else { return }

@@ -25,6 +25,7 @@ final class CursorMonitor: ObservableObject {
 
     private var fileWatcher: DispatchSourceFileSystemObject?
     private var fileDescriptor: Int32 = -1
+    private var debounceWork: DispatchWorkItem?
 
     private init() {}
 
@@ -32,7 +33,7 @@ final class CursorMonitor: ObservableObject {
 
     func start() {
         checkInstalled()
-        guard isInstalled else { print("[Cursor] Not installed — skipping start"); return }
+        guard isInstalled else { TNLog.info("[Cursor] Not installed — skipping start", category: .monitor); return }
         readDB()
         watchFile()
     }
@@ -78,9 +79,12 @@ final class CursorMonitor: ObservableObject {
         )
 
         source.setEventHandler { [weak self] in
-            Task { @MainActor in
-                self?.readDB()
+            self?.debounceWork?.cancel()
+            let work = DispatchWorkItem {
+                Task { @MainActor in self?.readDB() }
             }
+            self?.debounceWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
         }
 
         source.setCancelHandler { [weak self] in
@@ -166,8 +170,10 @@ final class CursorMonitor: ObservableObject {
 
     func toProviderUsage() -> ProviderUsage {
         let plan = AppSettings.shared.cursorPlanTier
-        // Arc shows today's requests vs daily budget (monthly cap / 30).
-        let dailyCap = max(1, plan.monthlyFastRequestCap / 30)
+        // Arc shows today's requests vs daily budget (monthly cap / days in current month).
+        let cal = Calendar.current
+        let daysInMonth = cal.range(of: .day, in: .month, for: Date())?.count ?? 30
+        let dailyCap = max(1, plan.monthlyFastRequestCap / daysInMonth)
         let pct = min(Double(todayGenerations) / Double(dailyCap) * 100, 100)
 
         return ProviderUsage(

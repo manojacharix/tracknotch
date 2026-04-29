@@ -12,9 +12,14 @@ final class AnthropicUsageFetcher: ObservableObject {
     @Published private(set) var modelBreakdown: [ModelUsage] = []
     @Published private(set) var lastFetchError: String?
     @Published private(set) var lastFetchedAt: Date?
+    @Published private(set) var isActivelyConsuming: Bool = false
 
     private var pollTimer: Timer?
     private let pollInterval: TimeInterval = 300  // 5 minutes
+    private var activityTimer: Timer?
+    private let activityTimeout: TimeInterval = 90  // bridge 60s active poll gaps
+    private var previousTokens: Int = 0
+    private var isFirstFetch: Bool = true
 
     private init() {}
 
@@ -22,7 +27,7 @@ final class AnthropicUsageFetcher: ObservableObject {
 
     func start() {
         guard ProviderAuthManager.shared.loadAPIKey(for: .anthropicAPI) != nil else {
-            print("[Anthropic] No API key configured — skipping start")
+            TNLog.info("[Anthropic] No API key configured — skipping start", category: .provider)
             return
         }
         Task { await fetchUsage() }
@@ -85,9 +90,16 @@ final class AnthropicUsageFetcher: ObservableObject {
                 return
             }
 
+            let prevTokens = previousTokens
             parseUsage(json)
             lastFetchError = nil
             lastFetchedAt = Date()
+            // Skip activity detection on first fetch — loading existing usage isn't "active"
+            if isFirstFetch {
+                isFirstFetch = false
+            } else if totalInputTokens + totalOutputTokens > prevTokens {
+                markActivity()
+            }
             ProviderRegistry.shared.updateUsage(toProviderUsage())
         } catch {
             lastFetchError = error.localizedDescription
@@ -111,10 +123,15 @@ final class AnthropicUsageFetcher: ObservableObject {
     ]
 
     /// Best-effort model price lookup. Falls back to Sonnet pricing if model not found.
+    private static var loggedUnknownModels = Set<String>()
     private static func priceFor(_ model: String) -> (input: Double, output: Double) {
         // Try exact match first, then prefix match for versioned model IDs
         if let p = pricing[model] { return p }
         for (key, p) in pricing where model.hasPrefix(key) { return p }
+        if !loggedUnknownModels.contains(model) {
+            loggedUnknownModels.insert(model)
+            TNLog.warn("[Anthropic] Unknown model '\(model)' — using Sonnet pricing as fallback", category: .provider)
+        }
         return (3.0, 15.0) // default to Sonnet pricing
     }
 
@@ -142,6 +159,7 @@ final class AnthropicUsageFetcher: ObservableObject {
             }
         }
 
+        previousTokens = totalInputTokens + totalOutputTokens
         totalInputTokens = input
         totalOutputTokens = output
         totalCostUSD = cost
@@ -149,7 +167,17 @@ final class AnthropicUsageFetcher: ObservableObject {
             ModelUsage(modelName: $0.key, tokensUsed: $0.value.input + $0.value.output, costUSD: $0.value.cost)
         }.sorted { $0.tokensUsed > $1.tokensUsed }
 
-        print("[Anthropic] Usage: \(input) input + \(output) output tokens, estimated cost: $\(String(format: "%.4f", cost))")
+        TNLog.debug("[Anthropic] Usage: \(input) input + \(output) output tokens, estimated cost: $\(String(format: "%.4f", cost))", category: .provider)
+    }
+
+    // MARK: - Activity
+
+    private func markActivity() {
+        isActivelyConsuming = true
+        activityTimer?.invalidate()
+        activityTimer = Timer.scheduledTimer(withTimeInterval: activityTimeout, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.isActivelyConsuming = false }
+        }
     }
 
     // MARK: - Usage conversion
@@ -170,7 +198,8 @@ final class AnthropicUsageFetcher: ObservableObject {
             costLimitUSD: budget,
             modelBreakdown: modelBreakdown,
             fetchedAt: lastFetchedAt ?? Date(),
-            isActivelyConsuming: false
+            isActivelyConsuming: isActivelyConsuming,
+            fetchError: lastFetchError
         )
     }
 }

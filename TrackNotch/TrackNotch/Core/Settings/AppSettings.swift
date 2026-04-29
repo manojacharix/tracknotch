@@ -1,11 +1,28 @@
 import Foundation
 import Combine
+import ServiceManagement
 
 @MainActor
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
 
-    @Published var launchAtLogin: Bool = false
+    @Published var launchAtLogin: Bool = false {
+        didSet {
+            do {
+                if launchAtLogin {
+                    try SMAppService.mainApp.register()
+                } else {
+                    try SMAppService.mainApp.unregister()
+                }
+            } catch {
+                TNLog.error("[Settings] Launch at login failed: \(error.localizedDescription)", category: .ui)
+                // Revert on failure without triggering didSet again
+                if launchAtLogin != oldValue {
+                    launchAtLogin = oldValue
+                }
+            }
+        }
+    }
 
     /// Context window size for the arc. Default 200K = Sonnet. Set to 1M for Opus.
     @Published var claudeContextLimit: Int {
@@ -38,6 +55,9 @@ final class AppSettings: ObservableObject {
         cursorPlanTier = CursorPlanTier(rawValue: UserDefaults.standard.string(forKey: "cursorPlanTier") ?? "") ?? .pro
         openAIMonthlyBudget = UserDefaults.standard.object(forKey: "openAIMonthlyBudget") as? Double ?? 20.0
         anthropicMonthlyBudget = UserDefaults.standard.object(forKey: "anthropicMonthlyBudget") as? Double ?? 20.0
+
+        // Sync launch-at-login with system state
+        launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 }
 

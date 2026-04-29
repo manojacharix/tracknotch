@@ -440,21 +440,13 @@ final class NotchWindow: NSPanel {
     /// from the tracking area (resize feedback loop).
     private var hoverRect: NSRect {
         let registry  = ProviderRegistry.shared
-        let iconCount = CGFloat(
-            max(registry.connectedProviders.filter { registry.usageMap[$0] != nil }.count, 1)
-        )
-        let iconSize: CGFloat = 22
-        let iconGap:  CGFloat = 8
-        let sidePad:  CGFloat = 10
-        let pillWidth = iconCount * iconSize + max(0, iconCount - 1) * iconGap + sidePad * 2
-        let hitWidth  = max(pillWidth + 16, 40)
+        let iconCount = registry.connectedProviders.filter { registry.usageMap[$0] != nil }.count
         let sf        = targetScreen.frame
-        let menuBarH  = sf.height - (targetScreen.visibleFrame.maxY - sf.origin.y)
-        return NSRect(
-            x: frame.midX - hitWidth / 2,
-            y: sf.origin.y + sf.height - menuBarH,
-            width: hitWidth,
-            height: menuBarH
+        return PillGeometry().hoverRect(
+            in: sf,
+            visibleFrameMaxY: targetScreen.visibleFrame.maxY,
+            windowMidX: frame.midX,
+            iconCount: iconCount
         )
     }
 

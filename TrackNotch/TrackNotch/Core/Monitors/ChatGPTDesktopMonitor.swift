@@ -19,13 +19,17 @@ final class ChatGPTDesktopMonitor: ObservableObject {
 
     private let supportDir: URL = {
         let fm = FileManager.default
-        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return fm.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support/com.openai.chat")
+        }
         return appSupport.appendingPathComponent("com.openai.chat")
     }()
 
     private var dirWatcher: DispatchSourceFileSystemObject?
     private var dirDescriptor: Int32 = -1
     private var scanTimer: Timer?
+    private var debounceWork: DispatchWorkItem?
 
     private init() {}
 
@@ -33,7 +37,7 @@ final class ChatGPTDesktopMonitor: ObservableObject {
 
     func start() {
         checkInstalled()
-        guard isInstalled else { print("[ChatGPT] Not installed — skipping start"); return }
+        guard isInstalled else { TNLog.info("[ChatGPT] Not installed — skipping start", category: .monitor); return }
         scanConversations()
         watchDirectory()
         scanTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
@@ -81,9 +85,12 @@ final class ChatGPTDesktopMonitor: ObservableObject {
         )
 
         source.setEventHandler { [weak self] in
-            Task { @MainActor in
-                self?.scanConversations()
+            self?.debounceWork?.cancel()
+            let work = DispatchWorkItem {
+                Task { @MainActor in self?.scanConversations() }
             }
+            self?.debounceWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
         }
 
         source.setCancelHandler { [weak self] in
@@ -124,17 +131,35 @@ final class ChatGPTDesktopMonitor: ObservableObject {
     }
 
     private func scanConversations() {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: supportDir.path) else { return }
-
+        let supportDir = self.supportDir
         let prevConversations = totalConversations
-        var allConversations = 0
-        var thisMonthConversations = 0
-        var thisDayConversations = 0
-        let monthStart = Self.currentMonthStart()
-        let dayStart   = Calendar.current.startOfDay(for: Date())
 
-        // ChatGPT desktop stores conversations in conversations-<uuid>/ directories
+        Task.detached(priority: .utility) {
+            let result = Self.scanConversationsSync(supportDir: supportDir)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.totalConversations = result.total
+                self.monthlyConversations = result.monthly
+                self.todayConversations = result.today
+                if result.total > prevConversations { self.markActivity() }
+            }
+        }
+    }
+
+    private struct ScanResult {
+        var total: Int = 0
+        var monthly: Int = 0
+        var today: Int = 0
+    }
+
+    private nonisolated static func scanConversationsSync(supportDir: URL) -> ScanResult {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: supportDir.path) else { return ScanResult() }
+
+        var result = ScanResult()
+        let monthStart = currentMonthStart()
+        let dayStart = Calendar.current.startOfDay(for: Date())
+
         let contents = (try? fm.contentsOfDirectory(at: supportDir, includingPropertiesForKeys: nil)) ?? []
         for dir in contents where dir.lastPathComponent.hasPrefix("conversations") {
             let items = (try? fm.contentsOfDirectory(
@@ -143,22 +168,17 @@ final class ChatGPTDesktopMonitor: ObservableObject {
                 options: []
             )) ?? []
             let convFiles = items.filter { $0.pathExtension == "data" || $0.pathExtension == "json" }
-            allConversations += convFiles.count
+            result.total += convFiles.count
             for url in convFiles {
                 let modDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-                if modDate >= monthStart { thisMonthConversations += 1 }
-                if modDate >= dayStart   { thisDayConversations   += 1 }
+                if modDate >= monthStart { result.monthly += 1 }
+                if modDate >= dayStart   { result.today   += 1 }
             }
         }
-
-        totalConversations = allConversations
-        monthlyConversations = thisMonthConversations
-        todayConversations = thisDayConversations
-
-        if allConversations > prevConversations { markActivity() }
+        return result
     }
 
-    private static func currentMonthStart() -> Date {
+    private nonisolated static func currentMonthStart() -> Date {
         let cal = Calendar.current
         let components = cal.dateComponents([.year, .month], from: Date())
         return cal.date(from: components) ?? Date()
