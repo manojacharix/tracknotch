@@ -24,7 +24,7 @@ final class ProviderRegistry: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     /// Linger timers: keep a provider visible after it stops actively consuming.
-    /// 6s gives enough runway to bridge polling gaps and the full collapse animation
+    /// 4s gives enough runway to bridge polling gaps and the full collapse animation
     /// without the icon flickering out mid-session.
     private static let lingerDuration: TimeInterval = 4
     private var lingerTimers: [LLMProvider: Timer] = [:]
@@ -51,10 +51,7 @@ final class ProviderRegistry: ObservableObject {
         cc.start()
         if cc.isInstalled {
             markAutoConnected(.claudeCode)
-            updateUsage(cc.toProviderUsage())
-            cc.objectWillChange.sink { [weak self] _ in
-                Task { @MainActor in self?.updateUsage(cc.toProviderUsage()) }
-            }.store(in: &cancellables)
+            startClaudeUsageTracking(monitor: cc)
         } else {
             evictStaleConnection(.claudeCode)
         }
@@ -104,7 +101,37 @@ final class ProviderRegistry: ObservableObject {
     private func evictStaleConnection(_ provider: LLMProvider) {
         connectionStates[provider] = .notConfigured
         ProviderAuthManager.shared.connectionStates[provider] = .notConfigured
+        ProviderAuthManager.shared.clearPersistedState(for: provider)
         usageMap.removeValue(forKey: provider)
+    }
+
+    /// Sets up Claude Code usage tracking. If an OAuth token is available, uses the
+    /// rate-limit header fetcher (authoritative 5h/7d %). Otherwise falls back to local JSONL estimate.
+    func startClaudeUsageTracking(monitor: ClaudeCodeMonitor) {
+        // Cancel any existing subscriptions for Claude Code
+        if ProviderAuthManager.shared.loadOAuthToken(for: .claudeCode) != nil {
+            // Authoritative: probe Anthropic API for real rate-limit headers
+            let fetcher = ClaudeRateLimitFetcher.shared
+            fetcher.start()
+            updateUsage(fetcher.toProviderUsage(monitor: monitor))
+            fetcher.objectWillChange.sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.updateUsage(fetcher.toProviderUsage(monitor: monitor))
+                }
+            }.store(in: &cancellables)
+            // Also subscribe to monitor for activity state changes
+            monitor.objectWillChange.sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.updateUsage(fetcher.toProviderUsage(monitor: monitor))
+                }
+            }.store(in: &cancellables)
+        } else {
+            // Fallback: local JSONL weekly estimate
+            updateUsage(monitor.toProviderUsage())
+            monitor.objectWillChange.sink { [weak self] _ in
+                Task { @MainActor in self?.updateUsage(monitor.toProviderUsage()) }
+            }.store(in: &cancellables)
+        }
     }
 
     private func startAPIFetchers() {
@@ -164,6 +191,18 @@ final class ProviderRegistry: ObservableObject {
         if let prev = usageMap[usage.provider], usage.percentage < prev.percentage - 20 {
             BudgetManager.shared.resetAlerts(for: usage.provider)
         }
+
+        // Skip update if nothing meaningful changed — prevents unnecessary SwiftUI redraws
+        if let existing = usageMap[usage.provider],
+           existing.percentage == usage.percentage
+            && existing.isActivelyConsuming == usage.isActivelyConsuming
+            && existing.tokensUsed == usage.tokensUsed
+            && existing.costUsedUSD == usage.costUsedUSD
+            && existing.secondaryPercentage == usage.secondaryPercentage
+            && existing.fetchError == usage.fetchError {
+            return
+        }
+
         usageMap[usage.provider] = usage
         manageLingerTimer(for: usage.provider, isActive: usage.isActivelyConsuming)
     }

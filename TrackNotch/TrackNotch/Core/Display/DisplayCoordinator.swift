@@ -12,6 +12,7 @@ final class DisplayCoordinator: ObservableObject {
     /// doesn't create duplicate windows for the same physical display.
     private var notchWindows: [UInt32: NotchWindow] = [:]
     private var screenObserver: Any?
+    private var wakeObserver: Any?
     private var screenChangeWork: DispatchWorkItem?
 
     private init() {}
@@ -29,6 +30,9 @@ final class DisplayCoordinator: ObservableObject {
         screenChangeWork?.cancel()
         if let observer = screenObserver {
             NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
     }
 
@@ -50,7 +54,9 @@ final class DisplayCoordinator: ObservableObject {
         let window = NotchWindow(screen: screen, mode: mode)
         window.show()
         notchWindows[id] = window
+        #if DEBUG
         print("[Display] Created \(mode) window for display \(id)")
+        #endif
     }
 
     private func observeScreenChanges() {
@@ -67,6 +73,24 @@ final class DisplayCoordinator: ObservableObject {
             self?.screenChangeWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
         }
+
+        // Refresh hover monitors and tracking areas after sleep/wake — the
+        // global event monitor context goes stale during sleep.
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            // Wait 1s for display stack to fully settle after wake
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                Task { @MainActor in self?.handleWake() }
+            }
+        }
+    }
+
+    private func handleWake() {
+        handleScreenChange()
+        notchWindows.values.forEach { $0.refreshAfterWake() }
     }
 
     private func handleScreenChange() {
@@ -75,7 +99,9 @@ final class DisplayCoordinator: ObservableObject {
 
         // Remove windows for disconnected displays
         for id in notchWindows.keys where !activeIDs.contains(id) {
+            #if DEBUG
             print("[Display] Removing window for disconnected display \(id)")
+            #endif
             notchWindows[id]?.close()
             notchWindows.removeValue(forKey: id)
         }

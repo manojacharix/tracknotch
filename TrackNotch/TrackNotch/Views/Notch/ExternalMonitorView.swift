@@ -452,7 +452,6 @@ struct ExternalMonitorView: View {
     // MARK: - Expand / Collapse dropdown
 
     private func openExpanded() {
-        NSLog("[ExternalMonitorView] openExpanded called: isExpanded=\(isExpanded), contentVisible=\(contentVisible)")
         cancelCollapse()
         cancelPendingTransitionWork()
         let nonce = beginTransition()
@@ -472,20 +471,17 @@ struct ExternalMonitorView: View {
         // Give SwiftUI one render pass to create the pill view, then expand
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             guard transitionNonce == nonce else { return }
-            NSLog("[ExternalMonitorView] setting isExpanded=true")
             withAnimation(.smooth(duration: 0.4)) {
                 self.isExpanded = true
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                 guard transitionNonce == nonce else { return }
-                NSLog("[ExternalMonitorView] setting contentVisible=true")
                 withAnimation(.easeOut(duration: 0.2)) { self.contentVisible = true }
             }
         }
     }
 
     private func closeExpanded() {
-        NSLog("[ExternalMonitorView] closeExpanded called: isExpanded=\(isExpanded)")
         guard isExpanded else { return }
         isEditMode = false
         cancelPendingTransitionWork()

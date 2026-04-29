@@ -96,11 +96,9 @@ struct NotchRootView: View {
             Task { @MainActor in geo = notchGeometry() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchExpandDropdown)) { _ in
-            NSLog("[NotchRootView] received notchExpandDropdown notification")
             openExpanded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchCollapseDropdown)) { _ in
-            NSLog("[NotchRootView] received notchCollapseDropdown notification")
             closeExpanded()
         }
         .onChange(of: shouldShow) { show in
@@ -153,7 +151,6 @@ struct NotchRootView: View {
     // MARK: - Toggle expansion (called by NotchWindow on click)
 
     func openExpanded() {
-        NSLog("[NotchRootView] openExpanded called: isExpanded=\(isExpanded), contentVisible=\(contentVisible)")
         cancelPendingWork()
         let nonce = beginTransition()
         // Already fully expanded with content visible — no-op
@@ -178,7 +175,6 @@ struct NotchRootView: View {
     }
 
     func closeExpanded() {
-        NSLog("[NotchRootView] closeExpanded called: isExpanded=\(isExpanded)")
         guard isExpanded else { return }
         cancelPendingWork()
         let nonce = beginTransition()
@@ -273,10 +269,7 @@ struct NotchRootView: View {
                     Color.white.opacity(0.001)
                         .frame(width: geo.notchWidth, height: pillHeight)
                         .contentShape(Rectangle())
-                        .onTapGesture {
-                            NSLog("[NotchRootView] notch gap tapped — calling onToggleDropdown")
-                            onToggleDropdown()
-                        }
+                        .onTapGesture { onToggleDropdown() }
 
                     // Settings button — left side of right wing, close to notch
                     ZStack {

@@ -15,9 +15,7 @@ private final class PassthroughHostingView: NSHostingView<AnyView> {
         guard rect.contains(point) else {
             return nil
         }
-        let result = super.hitTest(point)
-        NSLog("[PassthroughHostingView] hitTest HIT at \(point), result=\(String(describing: result))")
-        return result
+        return super.hitTest(point)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
@@ -59,9 +57,8 @@ private final class StripPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     override func sendEvent(_ event: NSEvent) {
-        // For mouse clicks, check if any subview claims the hit.
-        // If not, temporarily become click-through for this event so it
-        // falls through to windows and menu bar items behind the panel.
+        // For mouse clicks outside the hittable area, temporarily become
+        // click-through so the event reaches windows behind the panel.
         if event.type == .leftMouseDown || event.type == .rightMouseDown {
             let pt = contentView?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow
             if contentView?.hitTest(pt) == nil {
@@ -96,27 +93,16 @@ private final class StripView: NSView {
         trackingAreas.forEach { removeTrackingArea($0) }
         addTrackingArea(NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeAlways],
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
             owner: self,
             userInfo: nil
         ))
     }
 
-    override func mouseEntered(with event: NSEvent) {
-        NSLog("[StripView] mouseEntered")
-        onHoverEnter?()
-    }
-    override func mouseExited(with event: NSEvent) {
-        NSLog("[StripView] mouseExited")
-        onHoverExit?()
-    }
-    override func mouseDown(with event: NSEvent) {
-        NSLog("[StripView] mouseDown at \(event.locationInWindow)")
-    }
-    override func mouseUp(with event: NSEvent) {
-        NSLog("[StripView] mouseUp at \(event.locationInWindow)")
-        onNotchClick?()
-    }
+    override func mouseEntered(with event: NSEvent) { onHoverEnter?() }
+    override func mouseExited(with event: NSEvent)  { onHoverExit?() }
+    override func mouseDown(with event: NSEvent)    {}
+    override func mouseUp(with event: NSEvent)      { onNotchClick?() }
     override var acceptsFirstResponder: Bool        { true }
     override var mouseDownCanMoveWindow: Bool       { false }
 
@@ -147,6 +133,7 @@ final class NotchWindow: NSPanel {
     private var hoverLeaveTimer: Timer?
     private var outsideClickMonitor: Any?
     private var collapseFinalizeWork: DispatchWorkItem?
+    private var collapseObserver: Any?
 
     init(screen: NSScreen, mode: NotchMode) {
         self.targetScreen = screen
@@ -231,8 +218,6 @@ final class NotchWindow: NSPanel {
 
     /// For external monitor mode: a StripPanel intercepts clicks (prevents pass-through
     /// to apps behind), and a global mouseMoved monitor handles dynamic hover detection.
-    private var collapseObserver: Any?
-
     private func installExternalStripPanel() {
         let strip = StripPanel(frame: activeStripRect)
         strip.onNotchClick = { [weak self] in
@@ -261,8 +246,10 @@ final class NotchWindow: NSPanel {
     private func installExternalHoverMonitor() {
         externalHoverMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
             guard let self, let cg = event.cgEvent else { return }
-            let primaryH = NSScreen.screens.first.map { $0.frame.height } ?? 0
-            let appKitPt = NSPoint(x: cg.location.x, y: primaryH - cg.location.y)
+            // Use targetScreen geometry for correct coordinate translation.
+            // CGEvent origin is top-left of primary screen; AppKit origin is bottom-left.
+            let sf = self.targetScreen.frame
+            let appKitPt = NSPoint(x: cg.location.x, y: sf.origin.y + sf.height - cg.location.y)
             let inside = self.hoverRect.contains(appKitPt)
             DispatchQueue.main.async {
                 self.updateHoverState(inside: inside)
@@ -279,9 +266,9 @@ final class NotchWindow: NSPanel {
             ProviderRegistry.shared.isExternalHovered = true
             updateExternalStripFrame()
         } else {
-            hoverLeaveTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { _ in
+            hoverLeaveTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
                 ProviderRegistry.shared.isExternalHovered = false
-                self.updateExternalStripFrame()
+                self?.updateExternalStripFrame()
             }
         }
     }
@@ -437,14 +424,13 @@ final class NotchWindow: NSPanel {
             width: pillW,
             height: pillH
         )
-        NSLog("[NotchWindow] interactiveRect=\(rect), bounds=\(bounds), isDropdownVisible=\(isDropdownVisible)")
         return rect
     }
 
     // MARK: - Hover rect (external mode)
 
-    /// Dynamic hover/click zone: sized to the pill's actual width (icons + padding)
-    /// plus generous margins so it's easy to target. Minimum 120px for the idle dot.
+    /// Click/hover zone for external monitor: sized to the pill exactly (no extra margins).
+    /// Keeping this tight prevents blocking menu bar items beside the pill.
     private var hoverRect: NSRect {
         let registry = ProviderRegistry.shared
         let iconCount = CGFloat(max(
@@ -459,15 +445,16 @@ final class NotchWindow: NSPanel {
         let pillWidth: CGFloat = iconCount > 0
             ? iconCount * iconSize + max(0, iconCount - 1) * iconGap + sidePad * 2
             : 8
-        // Add 40px margin on each side for comfortable targeting
-        let hitWidth = max(pillWidth + 80, 120)
+        // Tight hit target — just the pill + 8px padding each side for comfortable clicking
+        let hitWidth = max(pillWidth + 16, 40)
         let sf = targetScreen.frame
         let menuBarH = sf.height - (targetScreen.visibleFrame.maxY - sf.origin.y)
+        // Height = menu bar only (no below-menu extension that blocks content)
         return NSRect(
             x: frame.midX - hitWidth / 2,
-            y: sf.origin.y + sf.height - menuBarH - 40,
+            y: sf.origin.y + sf.height - menuBarH,
             width: hitWidth,
-            height: menuBarH + 40
+            height: menuBarH
         )
     }
 
@@ -485,7 +472,6 @@ final class NotchWindow: NSPanel {
     }
 
     private func openDropdown() {
-        NSLog("[NotchWindow] openDropdown called, frame=\(frame)")
         collapseFinalizeWork?.cancel()
         collapseFinalizeWork = nil
         isDropdownVisible = true
@@ -495,23 +481,25 @@ final class NotchWindow: NSPanel {
         stripPanel?.ignoresMouseEvents = true
         updateStripFrame()
         makeKeyAndOrderFront(nil)
-        NSLog("[NotchWindow] openDropdown: isKey=\(isKeyWindow), ignoresMouse=\(ignoresMouseEvents), stripIgnores=\(stripPanel?.ignoresMouseEvents ?? true)")
 
         // Tell SwiftUI view to expand
         NotificationCenter.default.post(name: .notchExpandDropdown, object: nil)
 
+        // Cancel any lingering outside-click monitor before installing a new one
+        if let m = outsideClickMonitor { NSEvent.removeMonitor(m); outsideClickMonitor = nil }
+
         // Install outside-click monitor after a short delay to avoid catching the
         // triggering mouseDown or any buffered prior clicks in the event queue.
         let installTime = Date()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            guard self.isDropdownVisible else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self, self.isDropdownVisible else { return }
             self.outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
                 guard let self else { return }
-                // Skip events that happened before the monitor was installed
                 guard event.timestamp > installTime.timeIntervalSinceReferenceDate else { return }
                 guard let cg = event.cgEvent else { return }
-                let screenH = NSScreen.screens.first.map { $0.frame.height } ?? 0
-                let appKitPt = NSPoint(x: cg.location.x, y: screenH - cg.location.y)
+                // Use targetScreen for correct coordinate translation
+                let sf = self.targetScreen.frame
+                let appKitPt = NSPoint(x: cg.location.x, y: sf.origin.y + sf.height - cg.location.y)
                 if !self.frame.contains(appKitPt) {
                     DispatchQueue.main.async { self.closeDropdown() }
                 }
@@ -520,7 +508,6 @@ final class NotchWindow: NSPanel {
     }
 
     private func closeDropdown(fromNotification: Bool = false) {
-        NSLog("[NotchWindow] closeDropdown called (fromNotification=\(fromNotification))")
         isDropdownVisible = false
         collapseFinalizeWork?.cancel()
         collapseFinalizeWork = nil
@@ -542,11 +529,9 @@ final class NotchWindow: NSPanel {
         updateStripFrame()
         if let strip = stripPanel {
             strip.order(.above, relativeTo: windowNumber)
-            NSLog("[NotchWindow] closeDropdown: strip reordered, frame=\(strip.frame), ignoresMouse=\(strip.ignoresMouseEvents)")
         }
         // Resign key AFTER reordering to prevent macOS from shuffling windows
         if isKeyWindow { resignKey() }
-        NSLog("[NotchWindow] closeDropdown done: notchWindow.ignoresMouse=\(ignoresMouseEvents), stripPanel.ignoresMouse=\(stripPanel?.ignoresMouseEvents ?? true)")
     }
 
     // MARK: - Public
@@ -555,6 +540,21 @@ final class NotchWindow: NSPanel {
         setFrame(collapsedFrame, display: true)
         updateStripFrame()
         orderFrontRegardless()
+        stripPanel?.orderFrontRegardless()
+    }
+
+    /// Refresh event monitors and tracking areas after sleep/wake.
+    /// The global mouseMoved monitor context goes stale during sleep.
+    func refreshAfterWake() {
+        if let m = externalHoverMonitor { NSEvent.removeMonitor(m); externalHoverMonitor = nil }
+        if mode.isExternal { installExternalHoverMonitor() }
+        // Reset any stale hover state from before sleep
+        ProviderRegistry.shared.isExternalHovered = false
+        hoverLeaveTimer?.invalidate()
+        hoverLeaveTimer = nil
+        // Refresh AppKit tracking areas
+        (stripPanel?.contentView as? StripView)?.updateTrackingAreas()
+        updateStripFrame()
         stripPanel?.orderFrontRegardless()
     }
 
