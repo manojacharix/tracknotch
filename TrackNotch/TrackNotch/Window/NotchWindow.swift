@@ -257,7 +257,6 @@ final class NotchWindow: NSPanel {
             let inside = self.hoverRect.contains(appKitPt)
             DispatchQueue.main.async {
                 self.updateHoverState(inside: inside)
-                self.updateExternalStripFrame()
             }
         }
     }
@@ -268,10 +267,12 @@ final class NotchWindow: NSPanel {
         if inside {
             if !ProviderRegistry.shared.isExternalHovered { haptic() }
             ProviderRegistry.shared.isExternalHovered = true
-            updateExternalStripFrame()
+            // Do NOT resize here — resizing while the cursor is entering triggers a second
+            // mouseEntered from the tracking area (resize feedback loop).
         } else {
             hoverLeaveTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
                 ProviderRegistry.shared.isExternalHovered = false
+                // Safe to resize on exit — cursor is already leaving
                 self?.updateExternalStripFrame()
             }
         }
@@ -433,27 +434,22 @@ final class NotchWindow: NSPanel {
 
     // MARK: - Hover rect (external mode)
 
-    /// Click/hover zone for external monitor: sized to the pill exactly (no extra margins).
-    /// Keeping this tight prevents blocking menu bar items beside the pill.
+    /// Click/hover zone for external monitor: sized to the fully-expanded pill state.
+    /// Using connected count (not active count) keeps the panel stable — it never
+    /// resizes when hover state changes, which would trigger a second mouseEntered
+    /// from the tracking area (resize feedback loop).
     private var hoverRect: NSRect {
-        let registry = ProviderRegistry.shared
-        let iconCount = CGFloat(max(
-            registry.activeProviders.count,
-            registry.isExternalHovered
-                ? registry.connectedProviders.filter { registry.usageMap[$0] != nil }.count
-                : 0
-        ))
+        let registry  = ProviderRegistry.shared
+        let iconCount = CGFloat(
+            max(registry.connectedProviders.filter { registry.usageMap[$0] != nil }.count, 1)
+        )
         let iconSize: CGFloat = 22
-        let iconGap: CGFloat = 8
-        let sidePad: CGFloat = 10
-        let pillWidth: CGFloat = iconCount > 0
-            ? iconCount * iconSize + max(0, iconCount - 1) * iconGap + sidePad * 2
-            : 8
-        // Tight hit target — just the pill + 8px padding each side for comfortable clicking
-        let hitWidth = max(pillWidth + 16, 40)
-        let sf = targetScreen.frame
-        let menuBarH = sf.height - (targetScreen.visibleFrame.maxY - sf.origin.y)
-        // Height = menu bar only (no below-menu extension that blocks content)
+        let iconGap:  CGFloat = 8
+        let sidePad:  CGFloat = 10
+        let pillWidth = iconCount * iconSize + max(0, iconCount - 1) * iconGap + sidePad * 2
+        let hitWidth  = max(pillWidth + 16, 40)
+        let sf        = targetScreen.frame
+        let menuBarH  = sf.height - (targetScreen.visibleFrame.maxY - sf.origin.y)
         return NSRect(
             x: frame.midX - hitWidth / 2,
             y: sf.origin.y + sf.height - menuBarH,
