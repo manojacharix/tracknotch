@@ -96,9 +96,15 @@ struct NotchRootView: View {
             Task { @MainActor in geo = notchGeometry() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchExpandDropdown)) { _ in
+            #if DEBUG
+            print("[NotchRootView] received notchExpandDropdown")
+            #endif
             openExpanded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchCollapseDropdown)) { _ in
+            #if DEBUG
+            print("[NotchRootView] received notchCollapseDropdown")
+            #endif
             closeExpanded()
         }
         .onChange(of: shouldShow) { show in
@@ -151,6 +157,9 @@ struct NotchRootView: View {
     // MARK: - Toggle expansion (called by NotchWindow on click)
 
     func openExpanded() {
+        #if DEBUG
+        print("[NotchRootView] openExpanded: isExpanded=\(isExpanded), contentVisible=\(contentVisible)")
+        #endif
         cancelPendingWork()
         let nonce = beginTransition()
         // Already fully expanded with content visible — no-op
@@ -175,6 +184,9 @@ struct NotchRootView: View {
     }
 
     func closeExpanded() {
+        #if DEBUG
+        print("[NotchRootView] closeExpanded: isExpanded=\(isExpanded)")
+        #endif
         guard isExpanded else { return }
         cancelPendingWork()
         let nonce = beginTransition()

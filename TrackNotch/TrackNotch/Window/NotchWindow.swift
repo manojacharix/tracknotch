@@ -99,10 +99,29 @@ private final class StripView: NSView {
         ))
     }
 
-    override func mouseEntered(with event: NSEvent) { onHoverEnter?() }
-    override func mouseExited(with event: NSEvent)  { onHoverExit?() }
-    override func mouseDown(with event: NSEvent)    {}
-    override func mouseUp(with event: NSEvent)      { onNotchClick?() }
+    override func mouseEntered(with event: NSEvent) {
+        #if DEBUG
+        print("[StripView] mouseEntered")
+        #endif
+        onHoverEnter?()
+    }
+    override func mouseExited(with event: NSEvent) {
+        #if DEBUG
+        print("[StripView] mouseExited")
+        #endif
+        onHoverExit?()
+    }
+    override func mouseDown(with event: NSEvent) {
+        #if DEBUG
+        print("[StripView] mouseDown at \(event.locationInWindow)")
+        #endif
+    }
+    override func mouseUp(with event: NSEvent) {
+        #if DEBUG
+        print("[StripView] mouseUp at \(event.locationInWindow)")
+        #endif
+        onNotchClick?()
+    }
     override var acceptsFirstResponder: Bool        { true }
     override var mouseDownCanMoveWindow: Bool       { false }
 
@@ -467,11 +486,17 @@ final class NotchWindow: NSPanel {
     // MARK: - Dropdown (now expands in-place inside NotchWindow)
 
     func toggleDropdown() {
+        #if DEBUG
+        print("[NotchWindow] toggleDropdown: isDropdownVisible=\(isDropdownVisible)")
+        #endif
         NSLog("[NotchWindow] toggleDropdown: isDropdownVisible=\(isDropdownVisible)")
         isDropdownVisible ? closeDropdown() : openDropdown()
     }
 
     private func openDropdown() {
+        #if DEBUG
+        print("[NotchWindow] openDropdown called, frame=\(frame)")
+        #endif
         collapseFinalizeWork?.cancel()
         collapseFinalizeWork = nil
         isDropdownVisible = true
@@ -508,6 +533,9 @@ final class NotchWindow: NSPanel {
     }
 
     private func closeDropdown(fromNotification: Bool = false) {
+        #if DEBUG
+        print("[NotchWindow] closeDropdown called (fromNotification=\(fromNotification))")
+        #endif
         isDropdownVisible = false
         collapseFinalizeWork?.cancel()
         collapseFinalizeWork = nil

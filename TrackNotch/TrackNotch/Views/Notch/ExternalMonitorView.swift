@@ -452,6 +452,9 @@ struct ExternalMonitorView: View {
     // MARK: - Expand / Collapse dropdown
 
     private func openExpanded() {
+        #if DEBUG
+        print("[ExternalMonitorView] openExpanded: isExpanded=\(isExpanded), contentVisible=\(contentVisible)")
+        #endif
         cancelCollapse()
         cancelPendingTransitionWork()
         let nonce = beginTransition()
@@ -482,6 +485,9 @@ struct ExternalMonitorView: View {
     }
 
     private func closeExpanded() {
+        #if DEBUG
+        print("[ExternalMonitorView] closeExpanded: isExpanded=\(isExpanded)")
+        #endif
         guard isExpanded else { return }
         isEditMode = false
         cancelPendingTransitionWork()
