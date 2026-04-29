@@ -49,9 +49,9 @@ struct DropdownContent: View {
 
             } else {
                 LazyVGrid(columns: columns, spacing: 6) {
-                    ForEach(visibleProviders, id: \.self) { provider in
+                    ForEach(Array(visibleProviders.enumerated()), id: \.element) { idx, provider in
                         if let usage = registry.usageMap[provider] {
-                            pillCell(provider: provider, usage: usage)
+                            pillCell(provider: provider, usage: usage, index: idx)
                         }
                     }
                 }
@@ -69,7 +69,7 @@ struct DropdownContent: View {
     }
 
     @ViewBuilder
-    private func pillCell(provider: LLMProvider, usage: ProviderUsage) -> some View {
+    private func pillCell(provider: LLMProvider, usage: ProviderUsage, index: Int) -> some View {
         HStack(spacing: 4) {
             if isEditMode {
                 Ph.dotsSixVertical.bold
@@ -80,7 +80,7 @@ struct DropdownContent: View {
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
 
-            DropdownProviderPill(usage: usage, isEditMode: isEditMode)
+            DropdownProviderPill(usage: usage, isEditMode: isEditMode, appearIndex: index)
         }
         .opacity(draggingProvider == provider ? 0.4 : 1)
         .overlay(
@@ -151,12 +151,15 @@ private struct ProviderDropDelegate: DropDelegate {
 struct DropdownProviderPill: View {
     let usage: ProviderUsage
     var isEditMode: Bool = false
+    /// Stagger index — pills animate in sequence, not all at once
+    var appearIndex: Int = 0
+
     @State private var animatedPct: Double?
-    @State private var hasAnimatedIn: Bool = false
+    @State private var contentOpacity: Double = 0
 
     private let pillHeight: CGFloat = 52
 
-    private var displayPct: Double { animatedPct ?? usage.percentage }
+    private var displayPct: Double { animatedPct ?? 0 }
     private var isAPIToken: Bool { usage.billingType == .apiToken }
 
     var body: some View {
@@ -177,7 +180,7 @@ struct DropdownProviderPill: View {
                         LiquidFill(percentage: displayPct, height: pillHeight)
                             .frame(width: fillWidth, height: pillHeight)
                             .clipShape(Capsule())
-                            .animation(.interactiveSpring(response: 0.7, dampingFraction: 0.82, blendDuration: 0.1), value: displayPct)
+                            .animation(.easeOut(duration: 0.6), value: displayPct)
                     }
                 }
 
@@ -218,36 +221,61 @@ struct DropdownProviderPill: View {
                 }
                 .padding(.leading, 11)
                 .frame(maxWidth: w - 34, alignment: .leading)
+                .opacity(contentOpacity)
 
-                // Right: app icon
+                // Right: app icon + error dot
                 HStack(spacing: 0) {
                     Spacer()
-                    Image(usage.provider.iconName)
-                        .resizable()
-                        .scaledToFit()
-                        .foregroundColor(isAPIToken ? .white.opacity(0.5) : (displayPct > 0 ? .white : .white.opacity(0.4)))
-                        .frame(width: 15, height: 15)
-                        .padding(.trailing, 11)
+                    ZStack(alignment: .topTrailing) {
+                        Image(usage.provider.iconName)
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundColor(isAPIToken ? .white.opacity(0.5) : (displayPct > 0 ? .white : .white.opacity(0.4)))
+                            .frame(width: 15, height: 15)
+                        if usage.fetchError != nil {
+                            Circle()
+                                .fill(Color(hex: "fb4141"))
+                                .frame(width: 5, height: 5)
+                                .offset(x: 2, y: -2)
+                        }
+                    }
+                    .padding(.trailing, 11)
                 }
                 .frame(width: w)
+                .opacity(contentOpacity)
             }
         }
         .frame(height: pillHeight)
         .onAppear {
-            guard !isAPIToken else { return }
-            if !hasAnimatedIn {
-                animatedPct = 0
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    withAnimation(.interactiveSpring(response: 0.75, dampingFraction: 0.8, blendDuration: 0.1)) {
-                        animatedPct = usage.percentage
-                    }
+            // Reset to 0 every time the pill appears (dropdown opens)
+            animatedPct = 0
+            contentOpacity = 0
+
+            // Staggered delay: each pill waits a bit longer
+            let delay = 0.08 + Double(appearIndex) * 0.06
+
+            // Fade in text/icon quickly
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    contentOpacity = 1
                 }
-                hasAnimatedIn = true
+            }
+
+            // Fill bar animates from 0 to actual usage
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.05) {
+                withAnimation(.easeOut(duration: 0.7)) {
+                    animatedPct = usage.percentage
+                }
             }
         }
+        .onDisappear {
+            // Reset so next open replays the animation
+            animatedPct = 0
+            contentOpacity = 0
+        }
         .onChange(of: usage.percentage) { newValue in
-            guard !isAPIToken else { return }
-            withAnimation(.interactiveSpring(response: 0.5, dampingFraction: 0.82, blendDuration: 0.1)) {
+            // Live updates while dropdown is open
+            withAnimation(.easeOut(duration: 0.5)) {
                 animatedPct = newValue
             }
         }
@@ -268,6 +296,14 @@ struct DropdownProviderPill: View {
         case .apiToken:
             return nil  // handled inline
         case .subscription:
+            // Real rate-limit data (OAuth connected): show window + reset countdown
+            if usage.window == .fiveHour, usage.resetsAt != nil {
+                var label = "5h \(usage.formattedResetsIn)"
+                if let sec = usage.secondaryPercentage {
+                    label += " · 7d: \(Int(sec))%"
+                }
+                return label
+            }
             if let used = usage.tokensUsed, let limit = usage.tokensLimit {
                 return "\(fmt(used))/\(fmt(limit))"
             }
@@ -350,8 +386,14 @@ private struct LiquidFill: View {
         }
     }
 
+    /// Wave animation only needed when between two color zones (progress 0–1).
+    private var needsAnimation: Bool {
+        let z = zone
+        return z.progress > 0 && z.progress < 1
+    }
+
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1.0 / 60.0)) { tl in
+        TimelineView(.periodic(from: .now, by: needsAnimation ? 1.0 / 30.0 : 1.0)) { tl in
             let phase = tl.date.timeIntervalSinceReferenceDate
             let z = zone
 
@@ -403,22 +445,3 @@ private struct LiquidFill: View {
     }
 }
 
-// MARK: - Editable List (legacy — kept for settings screen)
-
-struct EditableProviderList: View {
-    @Binding var providers: [LLMProvider]
-    let registry: ProviderRegistry
-
-    var body: some View {
-        VStack(spacing: 2) {
-            ForEach(providers, id: \.self) { provider in
-                if let usage = registry.usageMap[provider] {
-                    EditModeRow(usage: usage)
-                }
-            }
-            .onMove { from, to in
-                providers.move(fromOffsets: from, toOffset: to)
-            }
-        }
-    }
-}

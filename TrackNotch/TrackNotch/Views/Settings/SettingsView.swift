@@ -71,9 +71,43 @@ struct ProvidersSettingsTab: View {
 
 struct DisplaySettingsTab: View {
     @ObservedObject var settings: AppSettings
+    @ObservedObject private var registry = ProviderRegistry.shared
 
     var body: some View {
         Form {
+            Section("Connected Monitors") {
+                if registry.connectedProviders.isEmpty {
+                    Text("No providers connected")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(registry.connectedProviders, id: \.self) { provider in
+                        HStack {
+                            Image(provider.iconName)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 16, height: 16)
+                            Text(provider.displayName)
+                                .font(.system(size: 13, design: .rounded))
+                            Spacer()
+                            if let usage = registry.usageMap[provider] {
+                                Text("\(Int(usage.percentage))%")
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundColor(.secondary)
+                                    .monospacedDigit()
+                            }
+                        }
+                    }
+                }
+            }
+
+            Section("About") {
+                HStack {
+                    Text("Version")
+                    Spacer()
+                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")
+                        .foregroundColor(.secondary)
+                }
+            }
         }
         .padding()
     }

@@ -182,6 +182,14 @@ struct ProviderUsage: Equatable {
     let fetchedAt: Date
     let isActivelyConsuming: Bool
 
+    // Optional secondary window (e.g. 7d utilization alongside 5h primary for Claude Code)
+    var secondaryPercentage: Double? = nil
+    var secondaryWindow: UsageWindow? = nil
+    var secondaryResetsAt: Date? = nil
+
+    /// Non-nil when the last fetch attempt failed (e.g. invalid key, network error)
+    var fetchError: String? = nil
+
     var remaining: Double { max(0, 100 - percentage) }
 
     var usageLevel: UsageLevel {

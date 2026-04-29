@@ -12,6 +12,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        ClaudeCodeMonitor.shared.stop()
+        CodexMonitor.shared.stop()
+        CursorMonitor.shared.stop()
+        ChatGPTDesktopMonitor.shared.stop()
+        OpenAIUsageFetcher.shared.stop()
+        AnthropicUsageFetcher.shared.stop()
+        ClaudeRateLimitFetcher.shared.stop()
         DisplayCoordinator.shared.teardown()
     }
 

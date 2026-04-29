@@ -31,10 +31,17 @@ struct WingIconView: View {
     var body: some View {
         ZStack {
             if isAPISpend {
-                // API spend: animated upward arrow replaces arc
+                // API spend: cost arc + animated arrow
+                Circle()
+                    .trim(from: 0, to: trimFraction)
+                    .stroke(
+                        arcColor.opacity(0.5),
+                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                    )
+                    .frame(width: 18, height: 18)
+                    .rotationEffect(.degrees(-90))
                 ArrowTickerView(isConsuming: usage.isActivelyConsuming)
-                    .frame(width: 10, height: 10)
-                    .offset(x: 6, y: -6)   // top-right corner, same position as arc would be
+                    .offset(x: 8, y: -8)
             } else {
                 // Subscription/local: colored arc indicating quota %
                 Circle()
