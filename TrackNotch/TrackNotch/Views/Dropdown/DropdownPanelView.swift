@@ -155,100 +155,198 @@ struct DropdownProviderPill: View {
     var appearIndex: Int = 0
 
     @State private var animatedPct: Double?
+    @State private var animatedSecondaryPct: Double?
     @State private var contentOpacity: Double = 0
 
     private let pillHeight: CGFloat = 52
 
     private var displayPct: Double { animatedPct ?? 0 }
+    private var displaySecondaryPct: Double { animatedSecondaryPct ?? 0 }
     private var isAPIToken: Bool { usage.billingType == .apiToken }
+    private var hasSplitWindows: Bool { !isAPIToken && usage.secondaryPercentage != nil }
 
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
 
-            ZStack(alignment: .leading) {
-                // Background track
-                Capsule()
-                    .fill(Color.white.opacity(0.08))
-                    .frame(width: w, height: pillHeight)
+            if hasSplitWindows {
+                // ── Split layout: two thin stacked bars (5h on top, 7d on bottom) ──
+                ZStack(alignment: .leading) {
+                    // Outer capsule background
+                    Capsule()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: w, height: pillHeight)
 
-                if !isAPIToken {
-                    // Subscription/local: liquid fill progress bar
-                    let hasProgress = displayPct > 0
-                    let fillWidth = hasProgress ? max(pillHeight, w * CGFloat(displayPct / 100)) : 0
-                    if hasProgress {
-                        LiquidFill(percentage: displayPct, height: pillHeight)
-                            .frame(width: fillWidth, height: pillHeight)
-                            .clipShape(Capsule())
-                            .animation(.easeOut(duration: 0.6), value: displayPct)
-                    }
-                }
-
-                // Left: stats text
-                VStack(alignment: .leading, spacing: 2) {
-                    if isAPIToken {
-                        // API token: show cost as primary
-                        Text(costLabel)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white)
-                            .monospacedDigit()
-                        if let limit = usage.costLimitUSD, limit > 0 {
-                            Text("of $\(Int(limit))")
-                                .font(.system(size: 8, weight: .regular, design: .rounded))
-                                .foregroundColor(.white.opacity(0.4))
-                                .lineLimit(1)
-                        } else {
-                            Text("this month")
-                                .font(.system(size: 8, weight: .regular, design: .rounded))
-                                .foregroundColor(.white.opacity(0.4))
+                    VStack(spacing: 2) {
+                        // ── Top row: 5h bar ──
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.white.opacity(0.10))
+                                .frame(height: 10)
+                            let hasPrimary = displayPct > 0
+                            let fillPrimary = hasPrimary ? max(10, w * CGFloat(displayPct / 100)) : 0
+                            if hasPrimary {
+                                LiquidFill(percentage: displayPct, height: 10)
+                                    .frame(width: fillPrimary, height: 10)
+                                    .clipShape(Capsule())
+                                    .animation(.easeOut(duration: 0.6), value: displayPct)
+                            }
+                            // Overlay: pct + label
+                            HStack(spacing: 0) {
+                                Text("\(Int(displayPct))%")
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .foregroundColor(hasPrimary ? .white : .white.opacity(0.45))
+                                    .monospacedDigit()
+                                Text("  \(primaryLabel)")
+                                    .font(.system(size: 8, weight: .regular, design: .rounded))
+                                    .foregroundColor(hasPrimary ? .white.opacity(0.75) : .white.opacity(0.3))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
+                            .padding(.leading, 7)
                         }
-                    } else {
-                        // Subscription/local: percentage as primary
+
+                        // ── Bottom row: 7d bar ──
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.white.opacity(0.10))
+                                .frame(height: 10)
+                            let hasSecondary = displaySecondaryPct > 0
+                            let fillSecondary = hasSecondary ? max(10, w * CGFloat(displaySecondaryPct / 100)) : 0
+                            if hasSecondary {
+                                LiquidFill(percentage: displaySecondaryPct, height: 10)
+                                    .frame(width: fillSecondary, height: 10)
+                                    .clipShape(Capsule())
+                                    .animation(.easeOut(duration: 0.6), value: displaySecondaryPct)
+                            }
+                            // Overlay: pct + label
+                            HStack(spacing: 0) {
+                                Text("\(Int(displaySecondaryPct))%")
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .foregroundColor(hasSecondary ? .white : .white.opacity(0.45))
+                                    .monospacedDigit()
+                                Text("  \(secondaryLabel)")
+                                    .font(.system(size: 8, weight: .regular, design: .rounded))
+                                    .foregroundColor(hasSecondary ? .white.opacity(0.75) : .white.opacity(0.3))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
+                            .padding(.leading, 7)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .frame(maxWidth: w - 34)
+                    .opacity(contentOpacity)
+
+                    // Right: app icon + error dot
+                    HStack(spacing: 0) {
+                        Spacer()
+                        ZStack(alignment: .topTrailing) {
+                            Image(usage.provider.iconName)
+                                .resizable()
+                                .scaledToFit()
+                                .foregroundColor(displayPct > 0 ? .white : .white.opacity(0.4))
+                                .frame(width: 15, height: 15)
+                            if usage.fetchError != nil {
+                                Circle()
+                                    .fill(Color(hex: "fb4141"))
+                                    .frame(width: 5, height: 5)
+                                    .offset(x: 2, y: -2)
+                            }
+                        }
+                        .padding(.trailing, 11)
+                    }
+                    .frame(width: w)
+                    .opacity(contentOpacity)
+                }
+            } else {
+                // ── Single-window layout (unchanged) ──
+                ZStack(alignment: .leading) {
+                    // Background track
+                    Capsule()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: w, height: pillHeight)
+
+                    if !isAPIToken {
+                        // Subscription/local: liquid fill progress bar
                         let hasProgress = displayPct > 0
-                        Text("\(Int(displayPct))%")
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundColor(hasProgress ? .white : .white.opacity(0.45))
-                            .monospacedDigit()
-                        if let detail = detailLabel {
-                            Text(detail)
-                                .font(.system(size: 8, weight: .regular, design: .rounded))
-                                .foregroundColor(hasProgress ? .white.opacity(0.75) : .white.opacity(0.3))
-                                .monospacedDigit()
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
+                        let fillWidth = hasProgress ? max(pillHeight, w * CGFloat(displayPct / 100)) : 0
+                        if hasProgress {
+                            LiquidFill(percentage: displayPct, height: pillHeight)
+                                .frame(width: fillWidth, height: pillHeight)
+                                .clipShape(Capsule())
+                                .animation(.easeOut(duration: 0.6), value: displayPct)
                         }
                     }
-                }
-                .padding(.leading, 11)
-                .frame(maxWidth: w - 34, alignment: .leading)
-                .opacity(contentOpacity)
 
-                // Right: app icon + error dot
-                HStack(spacing: 0) {
-                    Spacer()
-                    ZStack(alignment: .topTrailing) {
-                        Image(usage.provider.iconName)
-                            .resizable()
-                            .scaledToFit()
-                            .foregroundColor(isAPIToken ? .white.opacity(0.5) : (displayPct > 0 ? .white : .white.opacity(0.4)))
-                            .frame(width: 15, height: 15)
-                        if usage.fetchError != nil {
-                            Circle()
-                                .fill(Color(hex: "fb4141"))
-                                .frame(width: 5, height: 5)
-                                .offset(x: 2, y: -2)
+                    // Left: stats text
+                    VStack(alignment: .leading, spacing: 2) {
+                        if isAPIToken {
+                            // API token: show cost as primary
+                            Text(costLabel)
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                                .monospacedDigit()
+                            if let limit = usage.costLimitUSD, limit > 0 {
+                                Text("of $\(Int(limit))")
+                                    .font(.system(size: 8, weight: .regular, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.4))
+                                    .lineLimit(1)
+                            } else {
+                                Text("this month")
+                                    .font(.system(size: 8, weight: .regular, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.4))
+                            }
+                        } else {
+                            // Subscription/local: percentage as primary
+                            let hasProgress = displayPct > 0
+                            Text("\(Int(displayPct))%")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundColor(hasProgress ? .white : .white.opacity(0.45))
+                                .monospacedDigit()
+                            if let detail = detailLabel {
+                                Text(detail)
+                                    .font(.system(size: 8, weight: .regular, design: .rounded))
+                                    .foregroundColor(hasProgress ? .white.opacity(0.75) : .white.opacity(0.3))
+                                    .monospacedDigit()
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
                         }
                     }
-                    .padding(.trailing, 11)
+                    .padding(.leading, 11)
+                    .frame(maxWidth: w - 34, alignment: .leading)
+                    .opacity(contentOpacity)
+
+                    // Right: app icon + error dot
+                    HStack(spacing: 0) {
+                        Spacer()
+                        ZStack(alignment: .topTrailing) {
+                            Image(usage.provider.iconName)
+                                .resizable()
+                                .scaledToFit()
+                                .foregroundColor(isAPIToken ? .white.opacity(0.5) : (displayPct > 0 ? .white : .white.opacity(0.4)))
+                                .frame(width: 15, height: 15)
+                            if usage.fetchError != nil {
+                                Circle()
+                                    .fill(Color(hex: "fb4141"))
+                                    .frame(width: 5, height: 5)
+                                    .offset(x: 2, y: -2)
+                            }
+                        }
+                        .padding(.trailing, 11)
+                    }
+                    .frame(width: w)
+                    .opacity(contentOpacity)
                 }
-                .frame(width: w)
-                .opacity(contentOpacity)
             }
         }
         .frame(height: pillHeight)
         .onAppear {
             // Reset to 0 every time the pill appears (dropdown opens)
             animatedPct = 0
+            animatedSecondaryPct = 0
             contentOpacity = 0
 
             // Staggered delay: each pill waits a bit longer
@@ -261,16 +359,18 @@ struct DropdownProviderPill: View {
                 }
             }
 
-            // Fill bar animates from 0 to actual usage
+            // Fill bars animate from 0 to actual usage (both together)
             DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.05) {
                 withAnimation(.easeOut(duration: 0.7)) {
                     animatedPct = usage.percentage
+                    animatedSecondaryPct = usage.secondaryPercentage ?? 0
                 }
             }
         }
         .onDisappear {
             // Reset so next open replays the animation
             animatedPct = 0
+            animatedSecondaryPct = 0
             contentOpacity = 0
         }
         .onChange(of: usage.percentage) { newValue in
@@ -279,9 +379,43 @@ struct DropdownProviderPill: View {
                 animatedPct = newValue
             }
         }
+        .onChange(of: usage.secondaryPercentage) { newValue in
+            withAnimation(.easeOut(duration: 0.5)) {
+                animatedSecondaryPct = newValue ?? 0
+            }
+        }
     }
 
     // MARK: - Labels
+
+    /// "5h · 2h 15m" — shown next to the primary percentage in the split layout.
+    private var primaryLabel: String {
+        let windowName = usage.window.displayName   // e.g. "5h"
+        let reset = usage.formattedResetsIn          // e.g. "2h 15m" or "—"
+        return "\(windowName) · \(reset)"
+    }
+
+    /// "7d · 3d 4h" — shown next to the secondary percentage in the split layout.
+    private var secondaryLabel: String {
+        let windowName = usage.secondaryWindow?.displayName ?? "7d"
+        // Mirror formattedResetsIn logic for secondaryResetsAt
+        let reset: String
+        if let r = usage.secondaryResetsAt {
+            let seconds = r.timeIntervalSinceNow
+            if seconds <= 0 {
+                reset = "—"
+            } else {
+                let h = Int(seconds) / 3600
+                let m = (Int(seconds) % 3600) / 60
+                if h >= 24 { reset = "\(h / 24)d \(h % 24)h" }
+                else if h > 0 { reset = "\(h)h \(m)m" }
+                else { reset = "\(m)m" }
+            }
+        } else {
+            reset = "—"
+        }
+        return "\(windowName) · \(reset)"
+    }
 
     private var costLabel: String {
         if let cost = usage.costUsedUSD {
