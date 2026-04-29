@@ -55,21 +55,6 @@ private final class StripPanel: NSPanel {
 
     override var canBecomeKey: Bool  { false }
     override var canBecomeMain: Bool { false }
-
-    override func sendEvent(_ event: NSEvent) {
-        // For mouse clicks outside the hittable area, temporarily become
-        // click-through so the event reaches windows behind the panel.
-        if event.type == .leftMouseDown || event.type == .rightMouseDown {
-            let pt = contentView?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow
-            if contentView?.hitTest(pt) == nil {
-                ignoresMouseEvents = true
-                NSApp.postEvent(event, atStart: true)
-                DispatchQueue.main.async { self.ignoresMouseEvents = false }
-                return
-            }
-        }
-        super.sendEvent(event)
-    }
 }
 
 private final class StripView: NSView {
@@ -489,7 +474,6 @@ final class NotchWindow: NSPanel {
         #if DEBUG
         print("[NotchWindow] toggleDropdown: isDropdownVisible=\(isDropdownVisible)")
         #endif
-        NSLog("[NotchWindow] toggleDropdown: isDropdownVisible=\(isDropdownVisible)")
         isDropdownVisible ? closeDropdown() : openDropdown()
     }
 
