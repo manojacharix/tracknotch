@@ -66,14 +66,43 @@ private final class StripPanel: NSPanel {
     /// every time the cursor enters this panel. We never want to be key.
     override func makeKey() { /* no-op */ }
 
-    #if DEBUG
+    /// Tracks whether a left-mouse-down landed inside the content view, so
+    /// the matching mouse-up can fire `onNotchClick` even when the responder
+    /// chain to `StripView` is interrupted (which happens when the panel
+    /// sits on the menu bar zone — macOS doesn't always route clicks through
+    /// to subviews of nonactivating panels at level `.mainMenu + N`).
+    private var pendingMouseDown: Bool = false
+
     override func sendEvent(_ event: NSEvent) {
-        if event.type == .leftMouseDown || event.type == .leftMouseUp {
-            print("[StripPanel] sendEvent type=\(event.type.rawValue) at \(event.locationInWindow)")
+        // While the dropdown is open, the panel is set to ignoresMouseEvents
+        // and clicks should fall through. Don't fire onNotchClick in that
+        // state — otherwise we toggle the dropdown closed-then-open in one
+        // user click and it appears stuck.
+        guard !ignoresMouseEvents else {
+            super.sendEvent(event)
+            return
+        }
+        switch event.type {
+        case .leftMouseDown:
+            #if DEBUG
+            print("[StripPanel] sendEvent type=1 at \(event.locationInWindow)")
+            #endif
+            pendingMouseDown = bounds.contains(event.locationInWindow)
+        case .leftMouseUp:
+            #if DEBUG
+            print("[StripPanel] sendEvent type=2 at \(event.locationInWindow)")
+            #endif
+            if pendingMouseDown && bounds.contains(event.locationInWindow) {
+                onNotchClick?()
+            }
+            pendingMouseDown = false
+        default:
+            break
         }
         super.sendEvent(event)
     }
-    #endif
+
+    private var bounds: NSRect { contentView?.bounds ?? .zero }
 }
 
 private final class StripView: NSView {
@@ -124,7 +153,9 @@ private final class StripView: NSView {
         #if DEBUG
         print("[StripView] mouseUp at \(event.locationInWindow)")
         #endif
-        onNotchClick?()
+        // Click → toggle is dispatched by StripPanel.sendEvent (single source
+        // of truth). Don't fire it here too — that caused every click to
+        // toggle the dropdown twice (open then immediately close).
     }
     override var acceptsFirstResponder: Bool        { true }
     override var mouseDownCanMoveWindow: Bool       { false }
@@ -459,7 +490,6 @@ final class NotchWindow: NSPanel {
         // shape is clearly pill-like to the user.
         let extPillHeight: CGFloat = 32
         let sideInset: CGFloat = 4
-        let menuBarH = targetScreen.frame.height - (targetScreen.visibleFrame.maxY - targetScreen.frame.origin.y)
         let pillW: CGFloat = expandedWindowWidth - sideInset * 2
 
         // GeometryReader fires once the dropdown SwiftUI view appears (~0.05s
@@ -471,7 +501,8 @@ final class NotchWindow: NSPanel {
         // dropdownContentHeight already includes DropdownContent's own
         // .padding(.top, 8) + .padding(.bottom, 8), so no extra safety needed.
         let totalH = extPillHeight + contentH
-        let topEdgeY = menuBarH
+        // Pill now sits ON the menu bar (top of window in SwiftUI coords).
+        let topEdgeY: CGFloat = 0
 
         return NSRect(
             x: bounds.midX - pillW / 2,
@@ -546,7 +577,22 @@ final class NotchWindow: NSPanel {
                 // Use targetScreen for correct coordinate translation
                 let sf = self.targetScreen.frame
                 let appKitPt = NSPoint(x: cg.location.x, y: sf.origin.y + sf.height - cg.location.y)
-                if !self.frame.contains(appKitPt) {
+                // Close when click is outside the *visible* dropdown shape,
+                // not just outside the (much larger) transparent window frame.
+                // Convert the visible-content rect from view coords to screen coords.
+                guard let interactive = self.interactiveContentRectInView else {
+                    if !self.frame.contains(appKitPt) {
+                        DispatchQueue.main.async { self.closeDropdown() }
+                    }
+                    return
+                }
+                let visibleScreenRect = NSRect(
+                    x: self.frame.origin.x + interactive.origin.x,
+                    y: self.frame.origin.y + interactive.origin.y,
+                    width: interactive.width,
+                    height: interactive.height
+                )
+                if !visibleScreenRect.contains(appKitPt) {
                     DispatchQueue.main.async { self.closeDropdown() }
                 }
             }

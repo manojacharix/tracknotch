@@ -20,8 +20,9 @@ struct PillGeometry {
         let count     = CGFloat(max(iconCount, 1))
         let pillWidth = count * iconSize + max(0, count - 1) * iconGap + sidePad * 2
         let hitWidth  = max(pillWidth + 16, 40)
-        let menuBarH  = screenFrame.height - (visibleFrameMaxY - screenFrame.origin.y)
-        let pillTopY  = screenFrame.origin.y + screenFrame.height - menuBarH
+        // Pill now sits ON the menu bar (overlapping it). Top edge of the
+        // pill = top of screen; hover rect extends downward by pillHeight.
+        let pillTopY  = screenFrame.origin.y + screenFrame.height
         let hitHeight = pillHeight + verticalHoverPadding * 2
         return NSRect(
             x: windowMidX - hitWidth / 2,
