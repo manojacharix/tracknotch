@@ -7,14 +7,20 @@ private final class PassthroughHostingView: NSHostingView<AnyView> {
     var interactiveRectProvider: (() -> NSRect?)?
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // Only allow hits within the interactive rect (dropdown area).
-        // Everything outside passes through to windows behind.
+        // The interactive rect is now live-measured from SwiftUI (see
+        // DropdownFrameReporter), so it precisely tracks the visible black
+        // shape. Anything outside that rect passes through to apps behind.
         guard let rect = interactiveRectProvider?() else {
+            #if DEBUG
+            print("[Passthrough] hitTest pt=\(point) rect=nil → pass through")
+            #endif
             return nil
         }
-        guard rect.contains(point) else {
-            return nil
-        }
+        let inside = rect.contains(point)
+        #if DEBUG
+        print("[Passthrough] hitTest pt=\(point) rect=\(rect) inside=\(inside)")
+        #endif
+        guard inside else { return nil }
         return super.hitTest(point)
     }
 
@@ -55,6 +61,19 @@ private final class StripPanel: NSPanel {
 
     override var canBecomeKey: Bool  { false }
     override var canBecomeMain: Bool { false }
+
+    /// Silence the spammy `makeKeyWindow returned NO` warning AppKit prints
+    /// every time the cursor enters this panel. We never want to be key.
+    override func makeKey() { /* no-op */ }
+
+    #if DEBUG
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown || event.type == .leftMouseUp {
+            print("[StripPanel] sendEvent type=\(event.type.rawValue) at \(event.locationInWindow)")
+        }
+        super.sendEvent(event)
+    }
+    #endif
 }
 
 private final class StripView: NSView {
@@ -110,6 +129,12 @@ private final class StripView: NSView {
     override var acceptsFirstResponder: Bool        { true }
     override var mouseDownCanMoveWindow: Bool       { false }
 
+    /// Required because StripPanel is a non-key `nonactivatingPanel`. Without
+    /// this AppKit silently drops mouseDown/mouseUp before they reach this
+    /// view's overrides — the click events arrive at the panel's `sendEvent`
+    /// but never get routed through.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard bounds.contains(point) else { return nil }
         if let r = clickableRect {
@@ -138,6 +163,10 @@ final class NotchWindow: NSPanel {
     private var outsideClickMonitor: Any?
     private var collapseFinalizeWork: DispatchWorkItem?
     private var collapseObserver: Any?
+
+    /// Publishes the measured dropdown content height from SwiftUI.
+    /// Consumed by `interactiveContentRectInView` to compute a tight hit-test rect.
+    private let frameReporter = DropdownFrameReporter()
 
     init(screen: NSScreen, mode: NotchMode) {
         self.targetScreen = screen
@@ -194,6 +223,7 @@ final class NotchWindow: NSPanel {
                 ExternalMonitorView()
                     .environmentObject(ProviderRegistry.shared)
                     .environmentObject(AppSettings.shared)
+                    .environmentObject(frameReporter)
             )
             hostingView = PassthroughHostingView(rootView: view)
         } else {
@@ -203,6 +233,7 @@ final class NotchWindow: NSPanel {
                 })
                 .environmentObject(ProviderRegistry.shared)
                 .environmentObject(AppSettings.shared)
+                .environmentObject(frameReporter)
             )
             hostingView = PassthroughHostingView(rootView: view)
         }
@@ -418,18 +449,36 @@ final class NotchWindow: NSPanel {
 
     private var interactiveContentRectInView: NSRect? {
         guard isDropdownVisible, let contentView else { return nil }
-        // Only make the dropdown pill area interactive (centered, top-pinned).
-        // The rest of the window passes clicks through to apps behind.
         let bounds = contentView.bounds
-        let pillW: CGFloat = expandedWindowWidth
-        let pillH: CGFloat = expandedWindowHeight
-        let rect = NSRect(
+
+        // Tight, dropdown-aware rect. Trimmed by 4pt per side to release the
+        // shadow / anti-alias margin so adjacent clicks pass through cleanly.
+        // Trade-off: the bottom-corner curved areas (NotchShape uses a 26pt
+        // bottom corner radius) are a flat rectangle here, so a small triangle
+        // in each bottom corner over-claims clicks. Acceptable — the visible
+        // shape is clearly pill-like to the user.
+        let extPillHeight: CGFloat = 32
+        let sideInset: CGFloat = 4
+        let menuBarH = targetScreen.frame.height - (targetScreen.visibleFrame.maxY - targetScreen.frame.origin.y)
+        let pillW: CGFloat = expandedWindowWidth - sideInset * 2
+
+        // GeometryReader fires once the dropdown SwiftUI view appears (~0.05s
+        // after openDropdown). Use a tight floor (≈ default expandedContentHeight)
+        // for that brief window so first clicks aren't dropped.
+        let measured = frameReporter.dropdownContentHeight
+        let contentH: CGFloat = measured > 0 ? measured : 200
+
+        // dropdownContentHeight already includes DropdownContent's own
+        // .padding(.top, 8) + .padding(.bottom, 8), so no extra safety needed.
+        let totalH = extPillHeight + contentH
+        let topEdgeY = menuBarH
+
+        return NSRect(
             x: bounds.midX - pillW / 2,
-            y: bounds.maxY - pillH,
+            y: bounds.height - topEdgeY - totalH,
             width: pillW,
-            height: pillH
+            height: totalH
         )
-        return rect
     }
 
     // MARK: - Hover rect (external mode)

@@ -31,15 +31,8 @@ struct WingIconView: View {
     var body: some View {
         ZStack {
             if isAPISpend {
-                // API spend: cost arc + animated arrow
-                Circle()
-                    .trim(from: 0, to: trimFraction)
-                    .stroke(
-                        arcColor.opacity(0.5),
-                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
-                    )
-                    .frame(width: 18, height: 18)
-                    .rotationEffect(.degrees(-90))
+                // API spend: animated arrow only — cost is shown in the
+                // dropdown pill, no need for an arc on the wing icon.
                 ArrowTickerView(isConsuming: usage.isActivelyConsuming)
                     .offset(x: 8, y: -8)
             } else {

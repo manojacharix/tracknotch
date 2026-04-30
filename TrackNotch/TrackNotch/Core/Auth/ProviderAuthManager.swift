@@ -105,31 +105,35 @@ final class ProviderAuthManager: ObservableObject {
 
     // MARK: - Batch Keychain load (single access)
 
-    /// Loads all stored API keys for our service in one Keychain query.
+    /// Loads all stored API keys for our service.
+    /// Two-step strategy avoids the `errSecParam (-50)` failure that
+    /// `kSecReturnData + kSecReturnAttributes + kSecMatchLimitAll` triggers
+    /// together on some macOS versions:
+    ///   1. List accounts (attributes only) with `kSecMatchLimitAll`.
+    ///   2. Fetch data per account with `kSecMatchLimitOne`.
     private func loadAllKeysFromKeychain() {
-        let query: [String: Any] = [
+        let listQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "com.tracknotch.app",
-            kSecReturnData as String: true,
             kSecReturnAttributes as String: true,
             kSecMatchLimit as String: kSecMatchLimitAll
         ]
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status != errSecSuccess {
-            TNLog.warn("[Auth] Keychain batch load failed: OSStatus \(status)", category: .auth)
-            return
-        }
-        guard let items = result as? [[String: Any]] else {
+        var listResult: AnyObject?
+        let listStatus = SecItemCopyMatching(listQuery as CFDictionary, &listResult)
+        if listStatus == errSecItemNotFound {
             TNLog.info("[Auth] Keychain returned no items", category: .auth)
             return
         }
-        TNLog.info("[Auth] Loaded \(items.count) key(s) from Keychain", category: .auth)
+        if listStatus != errSecSuccess {
+            TNLog.warn("[Auth] Keychain account list failed: OSStatus \(listStatus)", category: .auth)
+            return
+        }
+        guard let items = listResult as? [[String: Any]] else { return }
+        TNLog.info("[Auth] Found \(items.count) keychain entries — fetching values", category: .auth)
 
         for item in items {
-            guard let account = item[kSecAttrAccount as String] as? String,
-                  let data = item[kSecValueData as String] as? Data,
-                  let value = String(data: data, encoding: .utf8) else { continue }
+            guard let account = item[kSecAttrAccount as String] as? String else { continue }
+            guard let value = readKeychainValue(account: account) else { continue }
 
             // Map keychain account back to provider
             if account.hasPrefix("oauthtoken_") {
@@ -148,6 +152,22 @@ final class ProviderAuthManager: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Fetches a single keychain value by account name. Used by the two-step
+    /// batch loader above.
+    private func readKeychainValue(account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "com.tracknotch.app",
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     // MARK: - Persistence (connected/not — key stays in Keychain)

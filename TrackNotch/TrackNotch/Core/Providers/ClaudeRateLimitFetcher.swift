@@ -76,7 +76,11 @@ final class ClaudeRateLimitFetcher: ObservableObject {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue(token, forHTTPHeaderField: "x-api-key")
+        // OAuth tokens (sk-ant-oat01-…) require Bearer + oauth beta header.
+        // Impersonate the real Claude Code CLI so rate-limit headers are scoped correctly.
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+        request.setValue("claude-code/2.1.5", forHTTPHeaderField: "User-Agent")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.timeoutInterval = 15

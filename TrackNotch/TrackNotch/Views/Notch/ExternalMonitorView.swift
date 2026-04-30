@@ -31,6 +31,7 @@ private let extExpandedBottomRadius:   CGFloat = 26
 
 struct ExternalMonitorView: View {
     @EnvironmentObject var registry: ProviderRegistry
+    @EnvironmentObject var frameReporter: DropdownFrameReporter
 
     /// Height of the macOS menu bar on this screen — pill sits just below it.
     private var menuBarHeight: CGFloat {
@@ -203,8 +204,10 @@ struct ExternalMonitorView: View {
                                     GeometryReader { proxy in
                                         Color.clear.onAppear {
                                             expandedContentHeight = proxy.size.height
+                                            frameReporter.dropdownContentHeight = proxy.size.height
                                         }.onChange(of: proxy.size.height) { h in
                                             expandedContentHeight = h
+                                            frameReporter.dropdownContentHeight = h
                                         }
                                     }
                                 )

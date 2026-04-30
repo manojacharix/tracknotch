@@ -295,6 +295,16 @@ private struct APIKeyRow: View {
                     .fill(Color.white.opacity(0.06))
             )
 
+            if let help = providerHelp {
+                HStack {
+                    Text(help)
+                        .font(.system(size: 10, design: .rounded))
+                        .foregroundColor(.white.opacity(0.4))
+                    Spacer()
+                }
+                .padding(.horizontal, 4)
+            }
+
             if let err = errorMessage {
                 HStack {
                     Text(err)
@@ -316,8 +326,16 @@ private struct APIKeyRow: View {
     private var placeholder: String {
         switch provider {
         case .openAIAPI:    return "sk-admin-..."
-        case .anthropicAPI: return "sk-ant-admin-..."
+        case .anthropicAPI: return "sk-ant-api03-... or sk-ant-admin-..."
         default:            return "paste your admin API key"
+        }
+    }
+
+    /// Provider-specific tooltip shown below the API key field.
+    fileprivate var providerHelp: String? {
+        switch provider {
+        case .anthropicAPI: return "Regular API keys work; Admin keys also surface org-wide cost."
+        default:            return nil
         }
     }
 
@@ -326,6 +344,9 @@ private struct APIKeyRow: View {
         guard !trimmed.isEmpty else { return }
         ProviderAuthManager.shared.saveAPIKey(trimmed, for: provider)
         ProviderRegistry.shared.updateConnectionState(.connected, for: provider)
+        // Seed an empty usage entry so the dropdown pill renders immediately,
+        // before the first fetcher poll completes.
+        ProviderRegistry.shared.seedEmptyUsageIfNeeded(for: provider)
         isSaved = true
         apiKey = "••••••••••••••••"
         errorMessage = nil
@@ -357,6 +378,7 @@ private struct OAuthTokenRow: View {
     @State private var token: String = ""
     @State private var isSaved: Bool = false
     @State private var isRevealed: Bool = false
+    @State private var showHelp: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -372,9 +394,43 @@ private struct OAuthTokenRow: View {
                 }
             }
 
-            Text("Real 5h/7d usage. Run `claude setup-token` in terminal.")
+            Text("Real 5h/7d usage from Anthropic rate-limit headers.")
                 .font(.system(size: 10, design: .rounded))
                 .foregroundColor(.white.opacity(0.35))
+
+            // Expandable how-to. Collapsed by default to keep the row compact.
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { showHelp.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: showHelp ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                    Text("How do I get an OAuth token?")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                }
+                .foregroundColor(.white.opacity(0.55))
+            }
+            .buttonStyle(.borderless)
+
+            if showHelp {
+                VStack(alignment: .leading, spacing: 4) {
+                    helpStep("1.", "Install Claude Code if you haven't:",
+                             code: "npm install -g @anthropic-ai/claude-code")
+                    helpStep("2.", "Run this in any terminal:",
+                             code: "claude setup-token")
+                    helpStep("3.", "Open the URL it prints, sign in to your Anthropic account, and approve access.")
+                    helpStep("4.", "Copy the token (starts with sk-ant-oat01-…) back into the terminal — it prints back as confirmation.")
+                    helpStep("5.", "Paste that same token into the field below and hit Save.")
+
+                    Text("Stored in your macOS Keychain. Used only for a 1-token probe call every ~30s to read 5h / 7d rate-limit headers — no message content is sent.")
+                        .font(.system(size: 9, design: .rounded))
+                        .foregroundColor(.white.opacity(0.35))
+                        .padding(.top, 2)
+                }
+                .padding(.leading, 12)
+                .padding(.vertical, 4)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
 
             HStack(spacing: 8) {
                 Group {
@@ -427,6 +483,48 @@ private struct OAuthTokenRow: View {
             if ProviderAuthManager.shared.loadOAuthToken(for: .claudeCode) != nil {
                 isSaved = true
                 token = "••••••••••••••••"
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func helpStep(_ num: String, _ text: String, code: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .top, spacing: 6) {
+                Text(num)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.55))
+                    .frame(width: 12, alignment: .leading)
+                Text(text)
+                    .font(.system(size: 10, design: .rounded))
+                    .foregroundColor(.white.opacity(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let code {
+                HStack(spacing: 6) {
+                    Text(code)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.85))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.white.opacity(0.08))
+                        )
+                        .textSelection(.enabled)
+                    Button {
+                        let pb = NSPasteboard.general
+                        pb.clearContents()
+                        pb.setString(code, forType: .string)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Copy")
+                }
+                .padding(.leading, 18)
             }
         }
     }

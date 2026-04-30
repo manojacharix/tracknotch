@@ -135,13 +135,21 @@ final class ProviderRegistry: ObservableObject {
     }
 
     private func startAPIFetchers() {
-        // Only start if an API key is already saved
+        // Only start if an API key is already saved.
+        // Seed an empty ProviderUsage so the dropdown pill renders immediately
+        // (DropdownContent.visibleProviders requires `usageMap[$0] != nil`).
         if ProviderAuthManager.shared.loadAPIKey(for: .openAIAPI) != nil {
             connectionStates[.openAIAPI] = .connected
+            if usageMap[.openAIAPI] == nil {
+                usageMap[.openAIAPI] = ProviderUsage.empty(provider: .openAIAPI)
+            }
             OpenAIUsageFetcher.shared.start()
         }
         if ProviderAuthManager.shared.loadAPIKey(for: .anthropicAPI) != nil {
             connectionStates[.anthropicAPI] = .connected
+            if usageMap[.anthropicAPI] == nil {
+                usageMap[.anthropicAPI] = ProviderUsage.empty(provider: .anthropicAPI)
+            }
             AnthropicUsageFetcher.shared.start()
         }
     }
@@ -228,6 +236,15 @@ final class ProviderRegistry: ObservableObject {
 
     func updateConnectionState(_ state: ProviderConnectionState, for provider: LLMProvider) {
         connectionStates[provider] = state
+    }
+
+    /// Seeds an empty ProviderUsage entry so the dropdown pill renders immediately
+    /// after key save. The next fetcher poll overwrites it with real data.
+    /// No-op if usage is already populated.
+    func seedEmptyUsageIfNeeded(for provider: LLMProvider) {
+        if usageMap[provider] == nil {
+            usageMap[provider] = ProviderUsage.empty(provider: provider)
+        }
     }
 
     // MARK: - Auth sync

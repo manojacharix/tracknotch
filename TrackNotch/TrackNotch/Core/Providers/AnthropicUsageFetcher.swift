@@ -53,7 +53,19 @@ final class AnthropicUsageFetcher: ObservableObject {
             return
         }
 
-        // Anthropic usage API: current month
+        // Admin keys (sk-ant-admin-…) hit /v1/organizations/usage_report/messages
+        // for org-wide aggregate cost. Regular keys (sk-ant-api03-…) probe
+        // /v1/messages and read rate-limit response headers.
+        if apiKey.hasPrefix("sk-ant-admin") {
+            await fetchViaAdminAPI(apiKey)
+        } else {
+            await fetchViaProbe(apiKey)
+        }
+    }
+
+    // MARK: - Admin API path (org-wide aggregate cost)
+
+    private func fetchViaAdminAPI(_ apiKey: String) async {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         let cal = Calendar.current
@@ -80,6 +92,14 @@ final class AnthropicUsageFetcher: ObservableObject {
                 lastFetchError = "No HTTP response"
                 return
             }
+            // Admin endpoint may reject the key (key is actually a regular API key,
+            // or admin permissions are missing). Fall back to the probe path so
+            // the user still sees a working pill.
+            if http.statusCode == 401 || http.statusCode == 403 {
+                TNLog.info("[Anthropic] Admin endpoint rejected key (HTTP \(http.statusCode)) — falling back to probe", category: .provider)
+                await fetchViaProbe(apiKey)
+                return
+            }
             guard http.statusCode == 200 else {
                 lastFetchError = "HTTP \(http.statusCode)"
                 return
@@ -104,6 +124,89 @@ final class AnthropicUsageFetcher: ObservableObject {
         } catch {
             lastFetchError = error.localizedDescription
         }
+    }
+
+    // MARK: - Probe path (regular API keys)
+
+    /// Sends a 1-token POST to /v1/messages and reads `anthropic-ratelimit-*`
+    /// response headers. Can't return aggregate monthly cost (those headers are
+    /// per-window) but confirms the key is valid and surfaces a non-zero token
+    /// count so the dropdown pill renders + activity arrow updates.
+    private func fetchViaProbe(_ apiKey: String) async {
+        guard let url = URL(string: "https://api.anthropic.com/v1/messages") else {
+            lastFetchError = "Invalid URL"
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        // User-Agent matches the Claude Code CLI so rate-limit headers are scoped correctly.
+        request.setValue("claude-code/2.1.5", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.timeoutInterval = 15
+
+        let body: [String: Any] = [
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 1,
+            "messages": [["role": "user", "content": "."]]
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                lastFetchError = "No HTTP response"
+                return
+            }
+            if http.statusCode == 401 {
+                lastFetchError = "Invalid API key"
+                TNLog.warn("[Anthropic] Probe rejected key (401)", category: .provider)
+                return
+            }
+            // 200 or 429 both populate rate-limit headers.
+            let headers = http.allHeaderFields
+            let inputLimit     = headerInt(headers, "anthropic-ratelimit-input-tokens-limit")
+            let inputRemaining = headerInt(headers, "anthropic-ratelimit-input-tokens-remaining")
+            let totalLimit     = headerInt(headers, "anthropic-ratelimit-tokens-limit")
+            let totalRemaining = headerInt(headers, "anthropic-ratelimit-tokens-remaining")
+
+            // Best-effort consumed estimate from whichever headers we got.
+            let inputConsumed = max(0, (inputLimit ?? 0) - (inputRemaining ?? 0))
+            let totalConsumed = max(0, (totalLimit ?? 0) - (totalRemaining ?? 0))
+            let consumed = max(inputConsumed, totalConsumed)
+
+            // Default to Sonnet input pricing for cost estimate.
+            let estCost = Double(consumed) * 3.0 / 1_000_000
+
+            let prevTokens = previousTokens
+            previousTokens = totalInputTokens + totalOutputTokens
+            totalInputTokens = consumed
+            totalOutputTokens = 0
+            totalCostUSD = estCost
+            modelBreakdown = []
+
+            lastFetchError = nil
+            lastFetchedAt = Date()
+
+            if isFirstFetch {
+                isFirstFetch = false
+            } else if consumed > prevTokens {
+                markActivity()
+            }
+
+            TNLog.debug("[Anthropic] Probe: consumed=\(consumed) tokens, estCost=$\(String(format: "%.4f", estCost)) HTTP \(http.statusCode)", category: .provider)
+            ProviderRegistry.shared.updateUsage(toProviderUsage())
+        } catch {
+            lastFetchError = error.localizedDescription
+            TNLog.error("[Anthropic] Probe error: \(error.localizedDescription)", category: .provider)
+        }
+    }
+
+    private func headerInt(_ headers: [AnyHashable: Any], _ name: String) -> Int? {
+        guard let val = headers[name] as? String ?? headers[name.lowercased()] as? String else { return nil }
+        return Int(val)
     }
 
     // MARK: - Pricing (per million tokens, USD)

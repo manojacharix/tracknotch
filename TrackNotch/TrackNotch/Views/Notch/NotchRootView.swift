@@ -22,6 +22,7 @@ struct NotchRootView: View {
     let onToggleDropdown: () -> Void
 
     @EnvironmentObject var registry: ProviderRegistry
+    @EnvironmentObject var frameReporter: DropdownFrameReporter
     @State private var geo: NotchGeometry? = nil
 
     @State private var iconsVisible: Bool = false
