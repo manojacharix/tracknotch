@@ -48,11 +48,20 @@ struct DropdownContent: View {
                 .padding(.vertical, 20)
 
             } else {
+                // Build a flat list of cells: a provider with both 5h and 7d
+                // data emits two cells (primary then secondary).
+                let cells: [DropdownCell] = visibleProviders.flatMap { provider -> [DropdownCell] in
+                    guard let usage = registry.usageMap[provider] else { return [] }
+                    let primary = DropdownCell(provider: provider, usage: usage, secondary: false)
+                    if usage.secondaryPercentage != nil && usage.billingType != .apiToken {
+                        return [primary, DropdownCell(provider: provider, usage: usage, secondary: true)]
+                    }
+                    return [primary]
+                }
+
                 LazyVGrid(columns: columns, spacing: 6) {
-                    ForEach(Array(visibleProviders.enumerated()), id: \.element) { idx, provider in
-                        if let usage = registry.usageMap[provider] {
-                            pillCell(provider: provider, usage: usage, index: idx)
-                        }
+                    ForEach(Array(cells.enumerated()), id: \.element) { idx, cell in
+                        pillCell(provider: cell.provider, usage: cell.usage, secondary: cell.secondary, index: idx)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -69,9 +78,9 @@ struct DropdownContent: View {
     }
 
     @ViewBuilder
-    private func pillCell(provider: LLMProvider, usage: ProviderUsage, index: Int) -> some View {
+    private func pillCell(provider: LLMProvider, usage: ProviderUsage, secondary: Bool, index: Int) -> some View {
         HStack(spacing: 4) {
-            if isEditMode {
+            if isEditMode && !secondary {
                 Ph.dotsSixVertical.bold
                     .resizable()
                     .scaledToFit()
@@ -80,15 +89,18 @@ struct DropdownContent: View {
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
 
-            DropdownProviderPill(usage: usage, isEditMode: isEditMode, appearIndex: index)
+            DropdownProviderPill(usage: usage, isEditMode: isEditMode, appearIndex: index, secondary: secondary)
         }
         .opacity(draggingProvider == provider ? 0.4 : 1)
         .overlay(
-            dropTargetProvider == provider && draggingProvider != provider
+            dropTargetProvider == provider && draggingProvider != provider && !secondary
                 ? RoundedRectangle(cornerRadius: 26)
                     .stroke(Color.white.opacity(0.3), lineWidth: 1.5)
                 : nil
         )
+        // Drag is enabled on every visible pill. For dual-quota providers
+        // (primary + secondary cells), both cells drag the same underlying
+        // provider — so picking up either cell reorders the pair together.
         .onDrag {
             draggingProvider = provider
             return NSItemProvider(object: provider.rawValue as NSString)
@@ -114,6 +126,23 @@ struct DropdownContent: View {
         if providerOrder.isEmpty {
             providerOrder = current
         }
+    }
+}
+
+/// One row in the dropdown grid. A dual-quota provider (e.g. Claude Code with
+/// OAuth → has both 5h and 7d data) emits two cells: primary then secondary.
+private struct DropdownCell: Hashable {
+    let provider: LLMProvider
+    let usage: ProviderUsage
+    let secondary: Bool
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(provider)
+        hasher.combine(secondary)
+    }
+
+    static func == (lhs: DropdownCell, rhs: DropdownCell) -> Bool {
+        lhs.provider == rhs.provider && lhs.secondary == rhs.secondary
     }
 }
 
@@ -153,116 +182,31 @@ struct DropdownProviderPill: View {
     var isEditMode: Bool = false
     /// Stagger index — pills animate in sequence, not all at once
     var appearIndex: Int = 0
+    /// When true, render the secondary window (e.g. 7d) instead of the primary
+    /// (5h). Used by DropdownContent to emit two cells for dual-quota providers.
+    var secondary: Bool = false
 
     @State private var animatedPct: Double?
-    @State private var animatedSecondaryPct: Double?
     @State private var contentOpacity: Double = 0
 
     private let pillHeight: CGFloat = 52
 
+    /// The percentage this pill renders — primary or secondary depending on mode.
+    private var sourcePercentage: Double {
+        secondary ? (usage.secondaryPercentage ?? 0) : usage.percentage
+    }
+
     private var displayPct: Double { animatedPct ?? 0 }
-    private var displaySecondaryPct: Double { animatedSecondaryPct ?? 0 }
     private var isAPIToken: Bool { usage.billingType == .apiToken }
-    private var hasSplitWindows: Bool { !isAPIToken && usage.secondaryPercentage != nil }
 
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
 
-            if hasSplitWindows {
-                // ── Split layout: two thin stacked bars (5h on top, 7d on bottom) ──
-                ZStack(alignment: .leading) {
-                    // Outer capsule background
-                    Capsule()
-                        .fill(Color.white.opacity(0.08))
-                        .frame(width: w, height: pillHeight)
-
-                    VStack(spacing: 2) {
-                        // ── Top row: 5h bar ──
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.10))
-                                .frame(height: 10)
-                            let hasPrimary = displayPct > 0
-                            let fillPrimary = hasPrimary ? max(10, w * CGFloat(displayPct / 100)) : 0
-                            if hasPrimary {
-                                LiquidFill(percentage: displayPct, height: 10)
-                                    .frame(width: fillPrimary, height: 10)
-                                    .clipShape(Capsule())
-                                    .animation(.easeOut(duration: 0.6), value: displayPct)
-                            }
-                            // Overlay: pct + label
-                            HStack(spacing: 0) {
-                                Text("\(Int(displayPct))%")
-                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                    .foregroundColor(hasPrimary ? .white : .white.opacity(0.45))
-                                    .monospacedDigit()
-                                Text("  \(primaryLabel)")
-                                    .font(.system(size: 8, weight: .regular, design: .rounded))
-                                    .foregroundColor(hasPrimary ? .white.opacity(0.75) : .white.opacity(0.3))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.8)
-                            }
-                            .padding(.leading, 7)
-                        }
-
-                        // ── Bottom row: 7d bar ──
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.10))
-                                .frame(height: 10)
-                            let hasSecondary = displaySecondaryPct > 0
-                            let fillSecondary = hasSecondary ? max(10, w * CGFloat(displaySecondaryPct / 100)) : 0
-                            if hasSecondary {
-                                LiquidFill(percentage: displaySecondaryPct, height: 10)
-                                    .frame(width: fillSecondary, height: 10)
-                                    .clipShape(Capsule())
-                                    .animation(.easeOut(duration: 0.6), value: displaySecondaryPct)
-                            }
-                            // Overlay: pct + label
-                            HStack(spacing: 0) {
-                                Text("\(Int(displaySecondaryPct))%")
-                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                    .foregroundColor(hasSecondary ? .white : .white.opacity(0.45))
-                                    .monospacedDigit()
-                                Text("  \(secondaryLabel)")
-                                    .font(.system(size: 8, weight: .regular, design: .rounded))
-                                    .foregroundColor(hasSecondary ? .white.opacity(0.75) : .white.opacity(0.3))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.8)
-                            }
-                            .padding(.leading, 7)
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .frame(maxWidth: w - 34)
-                    .opacity(contentOpacity)
-
-                    // Right: app icon + error dot
-                    HStack(spacing: 0) {
-                        Spacer()
-                        ZStack(alignment: .topTrailing) {
-                            Image(usage.provider.iconName)
-                                .resizable()
-                                .scaledToFit()
-                                .foregroundColor(displayPct > 0 ? .white : .white.opacity(0.4))
-                                .frame(width: 15, height: 15)
-                            if usage.fetchError != nil {
-                                Circle()
-                                    .fill(Color(hex: "fb4141"))
-                                    .frame(width: 5, height: 5)
-                                    .offset(x: 2, y: -2)
-                            }
-                        }
-                        .padding(.trailing, 11)
-                    }
-                    .frame(width: w)
-                    .opacity(contentOpacity)
-                }
-            } else {
-                // ── Single-window layout (unchanged) ──
-                ZStack(alignment: .leading) {
+            // Single-bar layout. Dual-quota providers are rendered as TWO
+            // sibling cells from DropdownContent (one with secondary=false,
+            // one with secondary=true), so each pill stays uncluttered.
+            ZStack(alignment: .leading) {
                     // Background track
                     Capsule()
                         .fill(Color.white.opacity(0.08))
@@ -271,7 +215,11 @@ struct DropdownProviderPill: View {
                     if !isAPIToken {
                         // Subscription/local: liquid fill progress bar
                         let hasProgress = displayPct > 0
-                        let fillWidth = hasProgress ? max(pillHeight, w * CGFloat(displayPct / 100)) : 0
+                        // Clamp fill to the pill's own width so percentages
+                        // above 100% (e.g. rate-limit hit at 123%) don't
+                        // overflow past the capsule into the icon area.
+                        // The percentage text still shows the true value.
+                        let fillWidth = hasProgress ? min(w, max(pillHeight, w * CGFloat(displayPct / 100))) : 0
                         if hasProgress {
                             LiquidFill(percentage: displayPct, height: pillHeight)
                                 .frame(width: fillWidth, height: pillHeight)
@@ -340,13 +288,11 @@ struct DropdownProviderPill: View {
                     .frame(width: w)
                     .opacity(contentOpacity)
                 }
-            }
         }
         .frame(height: pillHeight)
         .onAppear {
             // Reset to 0 every time the pill appears (dropdown opens)
             animatedPct = 0
-            animatedSecondaryPct = 0
             contentOpacity = 0
 
             // Staggered delay: each pill waits a bit longer
@@ -359,62 +305,53 @@ struct DropdownProviderPill: View {
                 }
             }
 
-            // Fill bars animate from 0 to actual usage (both together)
+            // Fill animates from 0 to the relevant usage (primary or secondary)
             DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.05) {
                 withAnimation(.easeOut(duration: 0.7)) {
-                    animatedPct = usage.percentage
-                    animatedSecondaryPct = usage.secondaryPercentage ?? 0
+                    animatedPct = sourcePercentage
                 }
             }
         }
         .onDisappear {
             // Reset so next open replays the animation
             animatedPct = 0
-            animatedSecondaryPct = 0
             contentOpacity = 0
         }
         .onChange(of: usage.percentage) { newValue in
             // Live updates while dropdown is open
             withAnimation(.easeOut(duration: 0.5)) {
-                animatedPct = newValue
+                animatedPct = secondary ? (usage.secondaryPercentage ?? 0) : newValue
             }
         }
         .onChange(of: usage.secondaryPercentage) { newValue in
+            guard secondary else { return }
             withAnimation(.easeOut(duration: 0.5)) {
-                animatedSecondaryPct = newValue ?? 0
+                animatedPct = newValue ?? 0
             }
         }
     }
 
     // MARK: - Labels
 
-    /// "5h · 2h 15m" — shown next to the primary percentage in the split layout.
-    private var primaryLabel: String {
-        let windowName = usage.window.displayName   // e.g. "5h"
-        let reset = usage.formattedResetsIn          // e.g. "2h 15m" or "—"
-        return "\(windowName) · \(reset)"
-    }
+    /// Window name for the primary (5h) bar — e.g. "5-hour".
+    private var primaryWindowLabel: String { usage.window.displayName }
 
-    /// "7d · 3d 4h" — shown next to the secondary percentage in the split layout.
-    private var secondaryLabel: String {
-        let windowName = usage.secondaryWindow?.displayName ?? "7d"
-        // Mirror formattedResetsIn logic for secondaryResetsAt
-        let reset: String
-        if let r = usage.secondaryResetsAt {
-            let seconds = r.timeIntervalSinceNow
-            if seconds <= 0 {
-                reset = "—"
-            } else {
-                let h = Int(seconds) / 3600
-                let m = (Int(seconds) % 3600) / 60
-                if h >= 24 { reset = "\(h / 24)d \(h % 24)h" }
-                else if h > 0 { reset = "\(h)h \(m)m" }
-                else { reset = "\(m)m" }
-            }
-        } else {
-            reset = "—"
-        }
-        return "\(windowName) · \(reset)"
+    /// Reset countdown for the primary bar — e.g. "4h 50m".
+    private var primaryResetLabel: String { usage.formattedResetsIn }
+
+    /// Window name for the secondary (7d) bar — e.g. "Weekly".
+    private var secondaryWindowLabel: String { usage.secondaryWindow?.displayName ?? "Weekly" }
+
+    /// Reset countdown for the secondary bar — e.g. "3d 4h".
+    private var secondaryResetLabel: String {
+        guard let r = usage.secondaryResetsAt else { return "—" }
+        let seconds = r.timeIntervalSinceNow
+        guard seconds > 0 else { return "—" }
+        let h = Int(seconds) / 3600
+        let m = (Int(seconds) % 3600) / 60
+        if h >= 24 { return "\(h / 24)d \(h % 24)h" }
+        if h > 0   { return "\(h)h \(m)m" }
+        return "\(m)m"
     }
 
     private var costLabel: String {
@@ -426,17 +363,19 @@ struct DropdownProviderPill: View {
     }
 
     private var detailLabel: String? {
+        // Secondary cell (7d): show window name + reset countdown only.
+        if secondary {
+            return "\(secondaryWindowLabel) \(secondaryResetLabel)"
+        }
+
         switch usage.billingType {
         case .apiToken:
             return nil  // handled inline
         case .subscription:
-            // Real rate-limit data (OAuth connected): show window + reset countdown
+            // Primary cell with real rate-limit data: show window + reset.
+            // The 7d figure now lives in its own sibling cell, so no append.
             if usage.window == .fiveHour, usage.resetsAt != nil {
-                var label = "5h \(usage.formattedResetsIn)"
-                if let sec = usage.secondaryPercentage {
-                    label += " · 7d: \(Int(sec))%"
-                }
-                return label
+                return "\(primaryWindowLabel) \(primaryResetLabel)"
             }
             if let used = usage.tokensUsed, let limit = usage.tokensLimit {
                 return "\(fmt(used))/\(fmt(limit))"
@@ -546,7 +485,7 @@ private struct LiquidFill: View {
                     let blobWidth = size.width * CGFloat(1.0 - z.progress)
                     let amplitude: CGFloat = height * 0.22
                     let frequency: Double  = 1.4
-                    let wavePhase          = phase * 0.9
+                    let wavePhase          = phase * 2.2
 
                     var path = Path()
                     path.move(to: CGPoint(x: 0, y: 0))

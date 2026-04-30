@@ -17,7 +17,7 @@ import SwiftUI
 
 private let iconSize:         CGFloat = 22
 private let iconGap:          CGFloat = 8
-private let sidePadding:      CGFloat = 10
+private let sidePadding:      CGFloat = 16
 private let extPillHeight:    CGFloat = 32
 private let pillCornerRadius: CGFloat = 14
 private let dotSize:          CGFloat = 8
@@ -138,11 +138,20 @@ struct ExternalMonitorView: View {
                         .fill(Color.black)
                         .frame(width: pillWidth, height: shapeHeight)
                         .shadow(color: .black.opacity(0.7), radius: 24, y: 10)
+                    } else if pillPhase >= 2 {
+                        // Fully-expanded pill: use NotchShape silhouette so the
+                        // notchless pill visually mimics wings (flat top, inward
+                        // top corners, outward bottom corners).
+                        NotchShape(topCornerRadius: 6, bottomCornerRadius: pillCornerRadius)
+                            .fill(Color.black)
+                            .frame(width: pillWidth, height: pillHeight)
+                            .shadow(color: .black.opacity(0.4), radius: 6, y: 0)
                     } else {
+                        // Dot / circle morph phases stay round.
                         RoundedRectangle(cornerRadius: pillRadius)
                             .fill(Color.black)
                             .frame(width: pillWidth, height: pillHeight)
-                            .shadow(color: .black.opacity(pillPhase >= 2 ? 0.4 : 0.2), radius: pillPhase >= 2 ? 6 : 2, y: 0)
+                            .shadow(color: .black.opacity(0.2), radius: 2, y: 0)
                     }
 
                     // Layer 2: Icons — only when pill is fully expanded (phase 2) and not in dropdown
@@ -160,8 +169,8 @@ struct ExternalMonitorView: View {
                             .buttonStyle(.borderless)
                             .font(.system(size: 11, weight: .medium, design: .rounded))
                             .foregroundColor(.white.opacity(0.7))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 7)
                             .background(Capsule().fill(Color.white.opacity(0.12)))
                             .contentShape(Capsule())
 
@@ -174,12 +183,14 @@ struct ExternalMonitorView: View {
                             .buttonStyle(.borderless)
                             .font(.system(size: 11, weight: .medium, design: .rounded))
                             .foregroundColor(.white.opacity(0.7))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 7)
                             .background(Capsule().fill(Color.white.opacity(0.12)))
                             .contentShape(Capsule())
                         }
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, 28)
+                        .padding(.top, 10)
+                        .padding(.bottom, 4)
                         .frame(width: pillWidth, height: extPillHeight)
                         .contentShape(Rectangle())
                         .onTapGesture {
@@ -226,7 +237,9 @@ struct ExternalMonitorView: View {
                 .animation(.smooth(duration: 0.35), value: shapeHeight)
                 .allowsHitTesting(isExpanded)
                 .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, menuBarHeight)
+                // Pill sits ON the menu bar (overlapping it). Stays
+                // horizontally centred so it doesn't collide with system
+                // status icons on the right or app menus on the left.
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchExpandDropdown)) { _ in
