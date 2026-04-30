@@ -10,8 +10,15 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     MACOSX_DEPLOYMENT_TARGET: "13.0"
-    CODE_SIGN_STYLE: Automatic
-    DEVELOPMENT_TEAM: ""
+  configs:
+    Debug:
+      CODE_SIGN_STYLE: Automatic
+      CODE_SIGN_IDENTITY: "Apple Development"
+      DEVELOPMENT_TEAM: ""
+    Release:
+      CODE_SIGN_STYLE: Manual
+      CODE_SIGN_IDENTITY: "-"
+      DEVELOPMENT_TEAM: ""
 
 packages:
   PhosphorSwift:
@@ -30,6 +37,22 @@ targets:
       - path: TrackNotch
         excludes:
           - "**/*.md"
+  TrackNotchTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: TrackNotchTests
+        excludes:
+          - "**/*.md"
+    dependencies:
+      - target: TrackNotch
+    settings:
+      base:
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TrackNotch.app/Contents/MacOS/TrackNotch"
+        PRODUCT_BUNDLE_IDENTIFIER: com.tracknotch.app.tests
+        GENERATE_INFOPLIST_FILE: YES
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tracknotch.app
@@ -46,7 +69,7 @@ targets:
         CFBundleDisplayName: TrackNotch
         CFBundleIdentifier: com.tracknotch.app
         CFBundleVersion: "1"
-        CFBundleShortVersionString: "0.1.0"
+        CFBundleShortVersionString: "1.0.0"
         NSPrincipalClass: NSApplication
         NSHighResolutionCapable: true
         LSUIElement: true

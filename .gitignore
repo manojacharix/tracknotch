@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Internal-only docs and assets (not for public repo)
+.internal-docs/
+Figma reference/
+
+# Build output
+build/
+DerivedData/
+*.dmg
+*.zip
+*.xcarchive
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+
+# Swift Package Manager
+.swiftpm/
+.build/
+
+# One-shot helper scripts (kept locally if needed, not tracked)
+/wire_*.rb
+/fix_*.rb
+/create_*.rb
