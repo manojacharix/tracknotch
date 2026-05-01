@@ -47,9 +47,14 @@ final class DisplayCoordinator: ObservableObject {
     }
 
     private func observeSettings() {
+        // @Published emits in willSet, so the stored value still reads as the
+        // *old* value while this sink runs. We must drive setup/teardown off
+        // the closure parameter, not a fresh read of AppSettings.
         settingsCancellable = AppSettings.shared.$isNotchEnabled
             .removeDuplicates()
             .dropFirst()
+            // willSet → main-queue hop so setupWindows reads the post-set value.
+            .receive(on: RunLoop.main)
             .sink { [weak self] enabled in
                 guard let self else { return }
                 if enabled {

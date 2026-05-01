@@ -105,15 +105,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     // MARK: - Actions
 
     @objc private func openSettings() {
-        // macOS 14 renamed showPreferencesWindow → showSettingsWindow. Try the
-        // newer selector first; AppKit forwards unhandled actions up the
-        // responder chain to the SwiftUI Settings scene.
-        if #available(macOS 14, *) {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        } else {
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-        }
-        NSApp.activate(ignoringOtherApps: true)
+        // Open the same window the pill dropdown uses, so users have one
+        // settings surface regardless of how they got there.
+        ConnectionWindowController.shared.open()
     }
 
     @objc private func toggleNotch() {

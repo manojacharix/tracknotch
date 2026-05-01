@@ -185,7 +185,12 @@ final class ProviderAuthManager: ObservableObject {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "com.tracknotch.app",
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: account,
+            // Available once the user has logged in for the boot session.
+            // Without this, macOS attaches a per-signature ACL that prompts
+            // every time the app's code signature changes (e.g. dev → ad-hoc
+            // → Developer ID), once per existing item.
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
         ]
     }
 
