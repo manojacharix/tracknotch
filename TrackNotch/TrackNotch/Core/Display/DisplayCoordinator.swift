@@ -14,26 +14,50 @@ final class DisplayCoordinator: ObservableObject {
     private var screenObserver: Any?
     private var wakeObserver: Any?
     private var screenChangeWork: DispatchWorkItem?
+    private var settingsCancellable: AnyCancellable?
 
     private init() {}
 
     // MARK: - Setup
 
     func setup() {
-        setupWindows()
+        if AppSettings.shared.isNotchEnabled {
+            setupWindows()
+        }
         observeScreenChanges()
+        observeSettings()
     }
 
     func teardown() {
-        notchWindows.values.forEach { $0.close() }
-        notchWindows.removeAll()
+        closeAllWindows()
         screenChangeWork?.cancel()
+        settingsCancellable?.cancel()
+        settingsCancellable = nil
         if let observer = screenObserver {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = wakeObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
+    }
+
+    private func closeAllWindows() {
+        notchWindows.values.forEach { $0.close() }
+        notchWindows.removeAll()
+    }
+
+    private func observeSettings() {
+        settingsCancellable = AppSettings.shared.$isNotchEnabled
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] enabled in
+                guard let self else { return }
+                if enabled {
+                    self.setupWindows()
+                } else {
+                    self.closeAllWindows()
+                }
+            }
     }
 
     // MARK: - Window Management
@@ -43,6 +67,7 @@ final class DisplayCoordinator: ObservableObject {
     }
 
     private func setupWindows() {
+        guard AppSettings.shared.isNotchEnabled else { return }
         for screen in NSScreen.screens {
             guard let id = displayID(for: screen), notchWindows[id] == nil else { continue }
             addWindow(id: id, for: screen)
@@ -94,6 +119,12 @@ final class DisplayCoordinator: ObservableObject {
     }
 
     private func handleScreenChange() {
+        // If the notch is disabled, drop any stragglers and stop. We still need
+        // the observer wired so that re-enabling reflects the current display set.
+        guard AppSettings.shared.isNotchEnabled else {
+            closeAllWindows()
+            return
+        }
         let currentScreens = NSScreen.screens
         let activeIDs = Set(currentScreens.compactMap { displayID(for: $0) })
 

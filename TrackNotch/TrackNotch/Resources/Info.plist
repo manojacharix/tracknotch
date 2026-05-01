@@ -15,7 +15,7 @@
 	<key>CFBundleName</key>
 	<string>TrackNotch</string>
 	<key>CFBundlePackageType</key>
-	<string>BNDL</string>
+	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0.0</string>
 	<key>CFBundleVersion</key>

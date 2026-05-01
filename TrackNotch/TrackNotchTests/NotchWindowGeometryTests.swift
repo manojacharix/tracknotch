@@ -47,7 +47,7 @@ final class NotchWindowGeometryTests: XCTestCase {
     private let visibleMaxY: CGFloat = 1440 - 24    // menu bar = 24
     private let windowMidX: CGFloat = 1280
 
-    func test_hoverRect_sitsBelowMenuBar_notInside() {
+    func test_hoverRect_topAlignsWithMenuBar() {
         let g = PillGeometry()
         let rect = g.hoverRect(
             in: screenFrame,
@@ -56,13 +56,12 @@ final class NotchWindowGeometryTests: XCTestCase {
             iconCount: 3
         )
 
-        // Menu bar occupies y in [1416, 1440]. The pill must sit BELOW that — i.e.
-        // its top edge is at the menu bar's bottom, and the rect extends downward.
-        let menuBarBottom: CGFloat = 1416
-        XCTAssertLessThanOrEqual(rect.maxY, menuBarBottom + g.verticalHoverPadding,
-                                 "hover rect should not extend above the menu bar's bottom")
-        XCTAssertGreaterThanOrEqual(rect.maxY, menuBarBottom - 0.001,
-                                    "hover rect's top should reach the menu bar's bottom")
+        // Pill now sits ON the menu bar: top edge at top of screen
+        // (screenFrame.maxY = 1440), hover rect extends downward by
+        // pillHeight + 2*verticalHoverPadding.
+        let screenTop: CGFloat = 1440
+        XCTAssertEqual(rect.maxY, screenTop + g.verticalHoverPadding, accuracy: 0.001,
+                       "hover rect's top should sit at the screen top + verticalHoverPadding")
     }
 
     func test_hoverRect_height_is_pillHeight_plus_padding() {

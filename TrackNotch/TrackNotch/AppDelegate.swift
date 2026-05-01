@@ -3,10 +3,13 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
+    private var statusMenuController: StatusMenuController?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         DisplayCoordinator.shared.setup()
         Task { @MainActor in
+            self.statusMenuController = StatusMenuController()
             ProviderRegistry.shared.bootstrap()
         }
     }

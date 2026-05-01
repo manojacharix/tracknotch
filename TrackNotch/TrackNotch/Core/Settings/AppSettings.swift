@@ -48,6 +48,12 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(anthropicMonthlyBudget, forKey: "anthropicMonthlyBudget") }
     }
 
+    /// Whether the on-screen notch pill is rendered. When false the app keeps
+    /// running (monitors, status menu) but no overlay window is created.
+    @Published var isNotchEnabled: Bool {
+        didSet { UserDefaults.standard.set(isNotchEnabled, forKey: "isNotchEnabled") }
+    }
+
     private init() {
         claudeContextLimit = UserDefaults.standard.object(forKey: "claudeContextLimit") as? Int ?? 200_000
         claudePlanTier = ClaudePlanTier(rawValue: UserDefaults.standard.string(forKey: "claudePlanTier") ?? "") ?? .pro
@@ -55,6 +61,7 @@ final class AppSettings: ObservableObject {
         cursorPlanTier = CursorPlanTier(rawValue: UserDefaults.standard.string(forKey: "cursorPlanTier") ?? "") ?? .pro
         openAIMonthlyBudget = UserDefaults.standard.object(forKey: "openAIMonthlyBudget") as? Double ?? 20.0
         anthropicMonthlyBudget = UserDefaults.standard.object(forKey: "anthropicMonthlyBudget") as? Double ?? 20.0
+        isNotchEnabled = (UserDefaults.standard.object(forKey: "isNotchEnabled") as? Bool) ?? true
 
         // Sync launch-at-login with system state
         launchAtLogin = SMAppService.mainApp.status == .enabled

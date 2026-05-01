@@ -104,7 +104,7 @@ struct DisplaySettingsTab: View {
                 HStack {
                     Text("Version")
                     Spacer()
-                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")
+                    Text(AppVersion.short)
                         .foregroundColor(.secondary)
                 }
             }
