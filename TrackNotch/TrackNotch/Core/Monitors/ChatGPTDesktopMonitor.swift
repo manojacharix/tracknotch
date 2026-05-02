@@ -63,11 +63,7 @@ final class ChatGPTDesktopMonitor: ObservableObject {
     private func checkInstalled() {
         let fm = FileManager.default
         let home = NSHomeDirectory()
-        // Antigravity is the ChatGPT-based desktop client on this machine.
-        // Also check for the upstream ChatGPT.app in case the user has that instead.
-        let appInstalled = fm.fileExists(atPath: "/Applications/Antigravity.app")
-                        || fm.fileExists(atPath: "\(home)/Applications/Antigravity.app")
-                        || fm.fileExists(atPath: "/Applications/ChatGPT.app")
+        let appInstalled = fm.fileExists(atPath: "/Applications/ChatGPT.app")
                         || fm.fileExists(atPath: "\(home)/Applications/ChatGPT.app")
         isInstalled = appInstalled && fm.fileExists(atPath: supportDir.path)
     }
@@ -117,15 +113,13 @@ final class ChatGPTDesktopMonitor: ObservableObject {
         }
     }
 
-    /// Check if ChatGPT/Antigravity is currently running
+    /// Check if ChatGPT desktop is currently running
     private var isAppRunning: Bool {
         let apps = NSWorkspace.shared.runningApplications
         return apps.contains { app in
             let id = app.bundleIdentifier ?? ""
             return id == "com.openai.chat"
                 || id == "com.openai.chatgpt"
-                || id == "com.openai.antigravity"
-                || app.localizedName == "Antigravity"
                 || app.localizedName == "ChatGPT"
         }
     }

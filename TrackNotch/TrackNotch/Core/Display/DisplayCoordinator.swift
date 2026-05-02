@@ -46,6 +46,15 @@ final class DisplayCoordinator: ObservableObject {
         notchWindows.removeAll()
     }
 
+    /// Collapse any currently-open dropdown across all NotchWindow instances.
+    /// Used preemptively when a competing window (e.g. the menu bar dropdown
+    /// or its eventual Settings dialog) is about to open — otherwise the
+    /// half-second SwiftUI collapse animation lets the dropdown visually
+    /// occlude the new window.
+    func collapseAnyOpenDropdown() {
+        notchWindows.values.forEach { $0.forceCollapseDropdownIfOpen() }
+    }
+
     private func observeSettings() {
         // @Published emits in willSet, so the stored value still reads as the
         // *old* value while this sink runs. We must drive setup/teardown off

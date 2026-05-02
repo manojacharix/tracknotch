@@ -100,14 +100,27 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         // Defensive: ensure title reflects current state in case the publisher
         // missed an update (e.g. settings changed while menu was building).
         refreshToggleNotchTitle()
+        // Belt-and-suspenders: collapse any open notch dropdown so the menu
+        // and any dialog opened from it can layer cleanly. This is redundant
+        // with openSettings()'s own collapse call but harmless if it fires.
+        DisplayCoordinator.shared.collapseAnyOpenDropdown()
     }
 
     // MARK: - Actions
 
     @objc private func openSettings() {
         // Open the same window the pill dropdown uses, so users have one
-        // settings surface regardless of how they got there.
-        ConnectionWindowController.shared.open()
+        // settings surface regardless of how they got there. The async hop
+        // is defense-in-depth — @objc selectors don't enforce MainActor at
+        // compile time, so we make the main-thread guarantee explicit.
+        DispatchQueue.main.async {
+            // Collapse the notch dropdown if it happens to be open. menuWillOpen
+            // doesn't fire reliably for NSStatusItem.menu = X, and resignKey
+            // doesn't always trigger when the dialog grabs key — so do it here
+            // at the deterministic moment Settings is actually being opened.
+            DisplayCoordinator.shared.collapseAnyOpenDropdown()
+            ConnectionWindowController.shared.open()
+        }
     }
 
     @objc private func toggleNotch() {

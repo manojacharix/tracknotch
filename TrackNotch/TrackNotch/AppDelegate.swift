@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         CodexMonitor.shared.stop()
         CursorMonitor.shared.stop()
         ChatGPTDesktopMonitor.shared.stop()
+        AntigravityMonitor.shared.stop()
         OpenAIUsageFetcher.shared.stop()
         AnthropicUsageFetcher.shared.stop()
         ClaudeRateLimitFetcher.shared.stop()

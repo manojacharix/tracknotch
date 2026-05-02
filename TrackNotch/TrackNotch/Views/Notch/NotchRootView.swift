@@ -287,8 +287,12 @@ struct NotchRootView: View {
                     // Settings button — left side of right wing, close to notch
                     ZStack {
                         Button("settings") {
+                            // Don't toggle the dropdown here — opening the
+                            // dialog makes it key, NotchWindow.resignKey()
+                            // handles the collapse via closeDropdown(). Doing
+                            // both would leave isDropdownVisible out of sync
+                            // with SwiftUI's isExpanded.
                             ConnectionWindowController.shared.open()
-                            onToggleDropdown()
                         }
                         .buttonStyle(.borderless)
                         .font(.system(size: 11, weight: .medium, design: .rounded))

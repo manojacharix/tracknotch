@@ -255,6 +255,7 @@ final class NotchWindow: NSPanel {
                     .environmentObject(ProviderRegistry.shared)
                     .environmentObject(AppSettings.shared)
                     .environmentObject(frameReporter)
+                    .font(.system(.body, design: .rounded))
             )
             hostingView = PassthroughHostingView(rootView: view)
         } else {
@@ -265,6 +266,7 @@ final class NotchWindow: NSPanel {
                 .environmentObject(ProviderRegistry.shared)
                 .environmentObject(AppSettings.shared)
                 .environmentObject(frameReporter)
+                .font(.system(.body, design: .rounded))
             )
             hostingView = PassthroughHostingView(rootView: view)
         }
@@ -632,10 +634,38 @@ final class NotchWindow: NSPanel {
     // MARK: - Public
 
     func show() {
+        // Belt-and-suspenders: always start in the collapsed/click-through
+        // state. Guards against any path where the previous instance left
+        // ignoresMouseEvents in a wedged state (e.g. a Disable→Enable cycle
+        // performed while the dropdown was open).
+        isDropdownVisible = false
+        ignoresMouseEvents = true
+        stripPanel?.ignoresMouseEvents = false
         setFrame(collapsedFrame, display: true)
         updateStripFrame()
         orderFrontRegardless()
         stripPanel?.orderFrontRegardless()
+    }
+
+    override func resignKey() {
+        super.resignKey()
+        // If we lost key while the dropdown was visible, another window grabbed
+        // focus (e.g. the Settings dialog opened via the menu bar). Force-close
+        // the dropdown so our state flags reset and the new key window can
+        // actually receive clicks.
+        if isDropdownVisible {
+            closeDropdown()
+        }
+    }
+
+    /// External entry point used by DisplayCoordinator.collapseAnyOpenDropdown()
+    /// to preemptively close the dropdown before a competing window opens.
+    /// Distinct from closeDropdown() because we want callers outside the
+    /// SwiftUI/notification flow to be able to trigger collapse without
+    /// guessing at the right entry point.
+    func forceCollapseDropdownIfOpen() {
+        guard isDropdownVisible else { return }
+        closeDropdown()
     }
 
     /// Refresh event monitors and tracking areas after sleep/wake.

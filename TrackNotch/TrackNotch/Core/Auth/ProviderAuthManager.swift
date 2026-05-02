@@ -1,214 +1,286 @@
 import Foundation
 import Security
 
-/// Manages API key storage per provider via Keychain.
-/// Local file monitors (Claude Code, Cursor, etc.) don't need auth — they auto-connect.
-/// Keys are loaded once at init into an in-memory cache to avoid repeated Keychain prompts.
+/// Manages API key + OAuth token storage via Keychain.
+///
+/// **Single-item storage strategy.** All secrets for all providers live in ONE
+/// Keychain entry (`service=com.tracknotch.app account=all_secrets`) as a JSON
+/// blob. This means the OS shows AT MOST ONE auth prompt per launch, regardless
+/// of how many providers are configured. Per-item storage (the previous
+/// approach) caused N prompts on every launch under ad-hoc signing because the
+/// legacy file keychain attaches a per-item ACL.
+///
+/// On first launch after upgrading from per-item storage, this class
+/// automatically migrates any pre-existing per-account entries into the new
+/// blob and deletes the originals.
 @MainActor
 final class ProviderAuthManager: ObservableObject {
     static let shared = ProviderAuthManager()
 
     @Published var connectionStates: [LLMProvider: ProviderConnectionState] = [:]
+    @Published private(set) var lastKeychainError: String?
 
-    /// In-memory cache — loaded once from Keychain at init
+    /// In-memory cache. Source of truth between launches is the JSON blob in
+    /// Keychain; we read it once at init and write it back on every change.
     private var keyCache: [LLMProvider: String] = [:]
     private var oauthCache: [LLMProvider: String] = [:]
 
     private init() {
         loadPersistedStates()
-        loadAllKeysFromKeychain()
+        loadFromKeychain()
+        migrateLegacyEntriesIfNeeded()
     }
 
-    // MARK: - Save / Load API key
-
-    @Published private(set) var lastKeychainError: String?
+    // MARK: - Public API
 
     func saveAPIKey(_ value: String, for provider: LLMProvider) {
-        let key = keychainKey(for: provider)
-        guard let data = value.data(using: .utf8) else { return }
-        var query = baseItemQuery(account: key)
-        query[kSecValueData as String] = data
-        SecItemDelete(query as CFDictionary)
-        let status = SecItemAdd(query as CFDictionary, nil)
-        if status != errSecSuccess {
-            lastKeychainError = "Failed to save API key: OSStatus \(status)"
-            TNLog.error("[Auth] Keychain save failed for \(provider.rawValue): OSStatus \(status)", category: .auth)
-            return
-        }
-        lastKeychainError = nil
+        // Snapshot in case keychain write fails; we'll roll the cache back so
+        // in-session state matches what's actually persisted on disk.
+        let previous = keyCache[provider]
         keyCache[provider] = value
-        connectionStates[provider] = .connected
-        persistState(for: provider, connected: true)
+        if persistBlob() {
+            connectionStates[provider] = .connected
+            persistState(for: provider, connected: true)
+        } else {
+            // Roll back so the user isn't misled into thinking the key is
+            // saved when it would be lost on next launch.
+            if let previous { keyCache[provider] = previous }
+            else { keyCache.removeValue(forKey: provider) }
+        }
     }
 
     func loadAPIKey(for provider: LLMProvider) -> String? {
-        return keyCache[provider]
+        keyCache[provider]
     }
 
     func disconnect(_ provider: LLMProvider) {
-        let key = keychainKey(for: provider)
-        let query = baseItemQuery(account: key)
-        SecItemDelete(query as CFDictionary)
+        let previous = keyCache[provider]
         keyCache.removeValue(forKey: provider)
-        connectionStates[provider] = .notConfigured
-        persistState(for: provider, connected: false)
+        if persistBlob() {
+            connectionStates[provider] = .notConfigured
+            persistState(for: provider, connected: false)
+        } else {
+            // Restore the in-memory key so it matches what's still in the
+            // keychain. Otherwise the user sees "disconnected" but the key
+            // would reappear on next launch.
+            if let previous { keyCache[provider] = previous }
+        }
     }
 
-    // MARK: - OAuth Token (for rate-limit header probing)
-
     func saveOAuthToken(_ value: String, for provider: LLMProvider) {
-        let key = oauthKeychainKey(for: provider)
-        guard let data = value.data(using: .utf8) else { return }
-        var query = baseItemQuery(account: key)
-        query[kSecValueData as String] = data
-        SecItemDelete(query as CFDictionary)
-        let status = SecItemAdd(query as CFDictionary, nil)
-        if status != errSecSuccess {
-            lastKeychainError = "Failed to save OAuth token: OSStatus \(status)"
-            TNLog.error("[Auth] Keychain OAuth save failed for \(provider.rawValue): OSStatus \(status)", category: .auth)
-            return
-        }
-        lastKeychainError = nil
+        let previous = oauthCache[provider]
         oauthCache[provider] = value
+        if !persistBlob() {
+            if let previous { oauthCache[provider] = previous }
+            else { oauthCache.removeValue(forKey: provider) }
+        }
     }
 
     func loadOAuthToken(for provider: LLMProvider) -> String? {
-        return oauthCache[provider]
+        oauthCache[provider]
     }
 
     func disconnectOAuth(_ provider: LLMProvider) {
-        let key = oauthKeychainKey(for: provider)
-        let query = baseItemQuery(account: key)
-        SecItemDelete(query as CFDictionary)
+        let previous = oauthCache[provider]
         oauthCache.removeValue(forKey: provider)
-    }
-
-    private func oauthKeychainKey(for provider: LLMProvider) -> String {
-        "oauthtoken_\(provider.rawValue)"
-    }
-
-    // MARK: - Batch Keychain load (single access)
-
-    /// Loads all stored API keys and OAuth tokens for our service in a single
-    /// `SecItemCopyMatching` call so macOS shows at most one auth prompt per
-    /// launch. On macOS versions that reject the combined
-    /// `kSecReturnData + kSecReturnAttributes + kSecMatchLimitAll` query with
-    /// `errSecParam (-50)`, falls back to the legacy two-step path
-    /// (list accounts, then fetch each value).
-    private func loadAllKeysFromKeychain() {
-        var combinedQuery = baseServiceQuery()
-        combinedQuery[kSecReturnAttributes as String] = true
-        combinedQuery[kSecReturnData as String] = true
-        combinedQuery[kSecMatchLimit as String] = kSecMatchLimitAll
-        var combinedResult: AnyObject?
-        let status = SecItemCopyMatching(combinedQuery as CFDictionary, &combinedResult)
-
-        if status == errSecItemNotFound {
-            TNLog.info("[Auth] Keychain returned no items", category: .auth)
-            return
+        if !persistBlob() {
+            if let previous { oauthCache[provider] = previous }
         }
+    }
 
-        if status == errSecSuccess, let items = combinedResult as? [[String: Any]] {
-            TNLog.info("[Auth] Loaded \(items.count) keychain entries in single call", category: .auth)
-            for item in items {
-                guard let account = item[kSecAttrAccount as String] as? String,
-                      let data = item[kSecValueData as String] as? Data,
-                      let value = String(data: data, encoding: .utf8) else { continue }
-                routeKeychainEntry(account: account, value: value)
+    func clearPersistedState(for provider: LLMProvider) {
+        persistState(for: provider, connected: false)
+    }
+
+    // MARK: - Single-blob persistence
+
+    private static let blobAccount = "all_secrets"
+    private static let service = "com.tracknotch.app"
+
+    /// Wire format. Versioned so future schema changes can migrate cleanly.
+    private struct SecretsBlob: Codable {
+        var version: Int = 1
+        var apiKeys: [String: String]   = [:]   // keyed by LLMProvider.rawValue
+        var oauthTokens: [String: String] = [:]
+    }
+
+    private func loadFromKeychain() {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.service,
+            kSecAttrAccount as String: Self.blobAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        query.removeValue(forKey: kSecReturnData as String)
+        query.removeValue(forKey: kSecMatchLimit as String)
+
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data,
+                  let blob = try? JSONDecoder().decode(SecretsBlob.self, from: data) else {
+                TNLog.warn("[Auth] Keychain blob present but undecodable; treating as empty", category: .auth)
+                return
             }
+            applyBlob(blob)
+            TNLog.info("[Auth] Loaded \(blob.apiKeys.count) API keys + \(blob.oauthTokens.count) OAuth tokens (single keychain read)", category: .auth)
+        case errSecItemNotFound:
+            // First launch with the new format, or after wipe. Caches stay empty.
             return
+        default:
+            TNLog.warn("[Auth] Keychain blob read failed: OSStatus \(status)", category: .auth)
         }
-
-        // Legacy fallback: pre-macOS-13 systems may return errSecParam for the
-        // combined query. Fall back to list-then-fetch-per-account.
-        TNLog.warn("[Auth] Combined keychain query failed (OSStatus \(status)) — falling back to two-step load", category: .auth)
-        loadAllKeysTwoStep()
     }
 
-    /// Legacy two-step fallback: list accounts, then read each value.
-    private func loadAllKeysTwoStep() {
-        var listQuery = baseServiceQuery()
-        listQuery[kSecReturnAttributes as String] = true
-        listQuery[kSecMatchLimit as String] = kSecMatchLimitAll
+    /// Write the current in-memory caches back as the single keychain blob.
+    /// Returns true on success.
+    @discardableResult
+    private func persistBlob() -> Bool {
+        var blob = SecretsBlob()
+        for (provider, value) in keyCache { blob.apiKeys[provider.rawValue] = value }
+        for (provider, value) in oauthCache { blob.oauthTokens[provider.rawValue] = value }
+
+        guard let data = try? JSONEncoder().encode(blob) else {
+            lastKeychainError = "Failed to encode secrets blob"
+            return false
+        }
+
+        let baseQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.service,
+            kSecAttrAccount as String: Self.blobAccount
+        ]
+
+        // Update if exists, otherwise add. We don't delete-and-add because
+        // that triggers two ACL grants instead of one.
+        let updateAttrs: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+        let updateStatus = SecItemUpdate(baseQuery as CFDictionary, updateAttrs as CFDictionary)
+        if updateStatus == errSecSuccess {
+            lastKeychainError = nil
+            return true
+        }
+        if updateStatus == errSecItemNotFound {
+            var addQuery = baseQuery
+            addQuery[kSecValueData as String] = data
+            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+            if addStatus == errSecSuccess {
+                lastKeychainError = nil
+                return true
+            }
+            lastKeychainError = "Keychain add failed: OSStatus \(addStatus)"
+            TNLog.error("[Auth] Keychain add failed: OSStatus \(addStatus)", category: .auth)
+            return false
+        }
+        lastKeychainError = "Keychain update failed: OSStatus \(updateStatus)"
+        TNLog.error("[Auth] Keychain update failed: OSStatus \(updateStatus)", category: .auth)
+        return false
+    }
+
+    private func applyBlob(_ blob: SecretsBlob) {
+        for (raw, value) in blob.apiKeys {
+            guard let provider = LLMProvider(rawValue: raw) else { continue }
+            keyCache[provider] = value
+        }
+        for (raw, value) in blob.oauthTokens {
+            guard let provider = LLMProvider(rawValue: raw) else { continue }
+            oauthCache[provider] = value
+        }
+    }
+
+    // MARK: - Legacy migration
+
+    /// On first launch after upgrading from per-item storage, scan for the old
+    /// `apikey_*` / `oauthtoken_*` accounts under our service, fold them into
+    /// the new blob, write the blob, and delete the legacy entries.
+    private func migrateLegacyEntriesIfNeeded() {
+        // Skip if blob already populated — migration is one-time. (We can't
+        // easily distinguish "blob exists with no values" from "no blob", but
+        // the worst case is a no-op pass that re-checks legacy entries each
+        // launch; checking the cache state is sufficient.)
+        var didMigrate = false
+
+        let listQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.service,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll
+        ]
         var listResult: AnyObject?
         let listStatus = SecItemCopyMatching(listQuery as CFDictionary, &listResult)
-        if listStatus == errSecItemNotFound { return }
-        if listStatus != errSecSuccess {
-            TNLog.warn("[Auth] Keychain account list failed: OSStatus \(listStatus)", category: .auth)
-            return
-        }
-        guard let items = listResult as? [[String: Any]] else { return }
-        TNLog.info("[Auth] Found \(items.count) keychain entries — fetching values (two-step)", category: .auth)
+        guard listStatus == errSecSuccess, let items = listResult as? [[String: Any]] else { return }
 
         for item in items {
             guard let account = item[kSecAttrAccount as String] as? String else { continue }
-            guard let value = readKeychainValue(account: account) else { continue }
-            routeKeychainEntry(account: account, value: value)
+            // Skip the new blob entry itself.
+            if account == Self.blobAccount { continue }
+            // Only migrate accounts that match our legacy naming.
+            let isLegacyAPIKey = account.hasPrefix("apikey_")
+            let isLegacyOAuth = account.hasPrefix("oauthtoken_")
+            guard isLegacyAPIKey || isLegacyOAuth else { continue }
+
+            guard let value = readSingleKeychainValue(account: account) else { continue }
+
+            if isLegacyAPIKey {
+                let raw = String(account.dropFirst("apikey_".count))
+                if let provider = LLMProvider(rawValue: raw), keyCache[provider] == nil {
+                    keyCache[provider] = value
+                }
+            } else if isLegacyOAuth {
+                let raw = String(account.dropFirst("oauthtoken_".count))
+                if let provider = LLMProvider(rawValue: raw), oauthCache[provider] == nil {
+                    oauthCache[provider] = value
+                }
+            }
+            didMigrate = true
+        }
+
+        guard didMigrate else { return }
+
+        TNLog.info("[Auth] Migrating legacy per-account keychain entries to single blob", category: .auth)
+        if persistBlob() {
+            // Delete legacy entries only after a successful blob write.
+            for item in items {
+                guard let account = item[kSecAttrAccount as String] as? String else { continue }
+                if account == Self.blobAccount { continue }
+                guard account.hasPrefix("apikey_") || account.hasPrefix("oauthtoken_") else { continue }
+                let delQuery: [String: Any] = [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: Self.service,
+                    kSecAttrAccount as String: account
+                ]
+                SecItemDelete(delQuery as CFDictionary)
+            }
+            // Restore connection state for migrated providers.
+            for provider in keyCache.keys {
+                connectionStates[provider] = .connected
+                persistState(for: provider, connected: true)
+            }
         }
     }
 
-    /// Maps a keychain account name back to its provider and stores the value
-    /// in the appropriate in-memory cache.
-    private func routeKeychainEntry(account: String, value: String) {
-        if account.hasPrefix("oauthtoken_") {
-            for provider in LLMProvider.allCases where account == oauthKeychainKey(for: provider) {
-                oauthCache[provider] = value
-                return
-            }
-        } else {
-            for provider in LLMProvider.apiKeyProviders where account == keychainKey(for: provider) {
-                keyCache[provider] = value
-                return
-            }
-        }
-    }
-
-    /// Fetches a single keychain value by account name. Used by the two-step
-    /// batch loader above.
-    private func readKeychainValue(account: String) -> String? {
-        var query = baseItemQuery(account: account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
+    private func readSingleKeychainValue(account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess, let data = result as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
-    // MARK: - Query builders
-
-    /// Base query for a single keychain item (account + service).
-    /// Uses the legacy file keychain — required for unsandboxed apps
-    /// without a paid Developer ID (data-protection keychain rejects
-    /// writes with errSecMissingEntitlement in that setup).
-    private func baseItemQuery(account: String) -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.tracknotch.app",
-            kSecAttrAccount as String: account,
-            // Available once the user has logged in for the boot session.
-            // Without this, macOS attaches a per-signature ACL that prompts
-            // every time the app's code signature changes (e.g. dev → ad-hoc
-            // → Developer ID), once per existing item.
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
-        ]
-    }
-
-    /// Base query scoped to the service (no account) — for list/batch reads.
-    private func baseServiceQuery() -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.tracknotch.app"
-        ]
-    }
-
-    // MARK: - Persistence (connected/not — key stays in Keychain)
+    // MARK: - Connection state persistence (no secrets, just the connected/not flag)
 
     private let defaultsKey = "providerConnectedStates"
-
-    func clearPersistedState(for provider: LLMProvider) {
-        persistState(for: provider, connected: false)
-    }
 
     private func persistState(for provider: LLMProvider, connected: Bool) {
         var states = UserDefaults.standard.dictionary(forKey: defaultsKey) as? [String: Bool] ?? [:]
@@ -222,9 +294,5 @@ final class ProviderAuthManager: ObservableObject {
             guard let provider = LLMProvider(rawValue: raw) else { continue }
             connectionStates[provider] = connected ? .connected : .notConfigured
         }
-    }
-
-    private func keychainKey(for provider: LLMProvider) -> String {
-        "apikey_\(provider.rawValue)"
     }
 }

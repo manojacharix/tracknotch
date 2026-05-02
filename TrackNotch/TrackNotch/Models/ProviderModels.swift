@@ -27,6 +27,7 @@ enum LLMProvider: String, CaseIterable, Identifiable, Codable {
     case codex          = "codex"
     case cursorIDE      = "cursor_ide"
     case chatGPTDesktop = "chatgpt_desktop"
+    case antigravity    = "antigravity"
 
     // Tier 2: API keys
     case openAIAPI      = "openai_api"
@@ -40,6 +41,7 @@ enum LLMProvider: String, CaseIterable, Identifiable, Codable {
         case .codex:          return "Codex"
         case .cursorIDE:      return "Cursor"
         case .chatGPTDesktop: return "ChatGPT Desktop"
+        case .antigravity:    return "Antigravity"
         case .openAIAPI:      return "OpenAI API"
         case .anthropicAPI:   return "Anthropic API"
         }
@@ -50,7 +52,8 @@ enum LLMProvider: String, CaseIterable, Identifiable, Codable {
         case .claudeCode:     return "claude-color"
         case .codex:          return "codex"
         case .cursorIDE:      return "cursor"
-        case .chatGPTDesktop: return "antigravity"
+        case .chatGPTDesktop: return "openai"
+        case .antigravity:    return "antigravity"
         case .openAIAPI:      return "openai"
         case .anthropicAPI:   return "claude-color"
         }
@@ -62,6 +65,7 @@ enum LLMProvider: String, CaseIterable, Identifiable, Codable {
         case .codex:          return .localUsage
         case .cursorIDE:      return .localUsage
         case .chatGPTDesktop: return .localUsage
+        case .antigravity:    return .localUsage
         case .openAIAPI:      return .apiToken
         case .anthropicAPI:   return .apiToken
         }
@@ -73,6 +77,7 @@ enum LLMProvider: String, CaseIterable, Identifiable, Codable {
         case .codex:          return .full
         case .cursorIDE:      return .full
         case .chatGPTDesktop: return .partial
+        case .antigravity:    return .partial
         case .openAIAPI:      return .full
         case .anthropicAPI:   return .full
         }
@@ -84,6 +89,7 @@ enum LLMProvider: String, CaseIterable, Identifiable, Codable {
         case .codex:          return Color(hex: "74aa9c")   // teal/green
         case .cursorIDE:      return Color(hex: "ffffff")   // white
         case .chatGPTDesktop: return Color(hex: "74aa9c")   // teal/green
+        case .antigravity:    return Color(hex: "4285f4")   // Google blue
         case .openAIAPI:      return Color(hex: "74aa9c")   // teal/green
         case .anthropicAPI:   return Color(hex: "ff9b2f")   // orange
         }
@@ -99,7 +105,8 @@ enum LLMProvider: String, CaseIterable, Identifiable, Codable {
         case .codex:          return .left
         case .claudeCode:     return .right
         case .anthropicAPI:   return .right
-        case .chatGPTDesktop: return .right   // antigravity-style, right
+        case .chatGPTDesktop: return .right
+        case .antigravity:    return .right
         }
     }
 
@@ -110,6 +117,7 @@ enum LLMProvider: String, CaseIterable, Identifiable, Codable {
         case .codex:          return .localFiles
         case .cursorIDE:      return .localFiles
         case .chatGPTDesktop: return .localFiles
+        case .antigravity:    return .localFiles
         case .openAIAPI:      return .apiKey
         case .anthropicAPI:   return .apiKey
         }

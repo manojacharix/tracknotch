@@ -94,6 +94,19 @@ final class ProviderRegistry: ObservableObject {
         } else {
             evictStaleConnection(.chatGPTDesktop)
         }
+
+        // Antigravity (Google's VS Code-based AI IDE; Gemini-backed)
+        let ag = AntigravityMonitor.shared
+        ag.start()
+        if ag.isInstalled {
+            markAutoConnected(.antigravity)
+            updateUsage(ag.toProviderUsage())
+            ag.objectWillChange.sink { [weak self] _ in
+                Task { @MainActor in self?.updateUsage(ag.toProviderUsage()) }
+            }.store(in: &cancellables)
+        } else {
+            evictStaleConnection(.antigravity)
+        }
     }
 
     /// Clears any stale persisted connection state for a provider that failed install detection.

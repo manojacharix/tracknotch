@@ -7,6 +7,7 @@ struct TrackNotchApp: App {
     var body: some Scene {
         Settings {
             SettingsView()
+                .font(.system(.body, design: .rounded))
         }
     }
 }

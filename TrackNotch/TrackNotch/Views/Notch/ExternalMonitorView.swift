@@ -177,8 +177,16 @@ struct ExternalMonitorView: View {
                             Spacer()
 
                             Button("settings") {
+                                // Don't post notchCollapseDropdown here.
+                                // ConnectionWindow.open() makes the dialog
+                                // key; NotchWindow.resignKey() then handles
+                                // the dropdown collapse via closeDropdown(),
+                                // which posts the notification once. Posting
+                                // it twice from here used to leave NotchWindow's
+                                // isDropdownVisible flag out of sync with the
+                                // SwiftUI isExpanded state, so subsequent pill
+                                // clicks were no-ops.
                                 ConnectionWindowController.shared.open()
-                                NotificationCenter.default.post(name: .notchCollapseDropdown, object: nil)
                             }
                             .buttonStyle(.borderless)
                             .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -192,10 +200,11 @@ struct ExternalMonitorView: View {
                         .padding(.top, 10)
                         .padding(.bottom, 4)
                         .frame(width: pillWidth, height: extPillHeight)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            NotificationCenter.default.post(name: .notchCollapseDropdown, object: nil)
-                        }
+                        // No parent .onTapGesture here — it raced with the
+                        // child Buttons (Edit/Settings) and would sometimes
+                        // win the tap, posting collapse and swallowing the
+                        // button's action. Outside-the-pill clicks are
+                        // already handled by NotchWindow.outsideClickMonitor.
                         .opacity(contentVisible ? 1 : 0)
                     }
 

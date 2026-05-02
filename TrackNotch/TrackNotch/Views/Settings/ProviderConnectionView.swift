@@ -1,71 +1,67 @@
 import SwiftUI
-import PhosphorSwift
 
 /// Simplified connection view:
 ///  - Auto-detected: local tools already found (checkmarks, no action)
 ///  - API keys: paste fields for OpenAI & Anthropic
 struct ProviderConnectionView: View {
-    @Environment(\.dismiss) private var dismiss
     @ObservedObject private var registry = ProviderRegistry.shared
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             Color(hex: "252728").ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Header
-                VStack(spacing: 8) {
-                    Text("Connect your models")
-                        .font(.system(size: 22, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
-
-                    Text("Local tools auto-connect. Paste API keys for OpenAI or Anthropic.")
-                        .font(.system(size: 13, design: .rounded))
-                        .foregroundColor(.white.opacity(0.55))
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.top, 36)
-                .padding(.horizontal, 32)
-
-                Spacer().frame(height: 24)
+                header
+                    .padding(.top, 28)
+                    .padding(.horizontal, 32)
+                    .padding(.bottom, 20)
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 24) {
                         autoDetectedSection
                         apiKeySection
                     }
                     .padding(.horizontal, 24)
                     .padding(.bottom, 24)
                 }
-
-                Spacer(minLength: 0)
             }
-
-            // Close button
-            Button {
-                dismiss()
-                ConnectionWindowController.shared.close()
-            } label: {
-                Ph.x.bold
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 12, height: 12)
-                    .foregroundColor(.white.opacity(0.5))
-                    .padding(10)
-                    .background(Circle().fill(Color.white.opacity(0.08)))
-            }
-            .buttonStyle(.borderless)
-            .padding(16)
         }
         .frame(width: 480, height: 520)
     }
 
-    // MARK: - Auto-detected
+    // MARK: - Header
+
+    private var header: some View {
+        VStack(spacing: 10) {
+            Image("AppLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(spacing: 2) {
+                Text("TrackNotch")
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                Text("Version \(AppVersion.short)")
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundColor(.white.opacity(0.4))
+            }
+
+            Text("Track your LLM usage in real time — locally and privately. Costs and quotas across Claude, OpenAI, Cursor, and more, surfaced right at the notch.")
+                .font(.system(size: 12, design: .rounded))
+                .foregroundColor(.white.opacity(0.55))
+                .multilineTextAlignment(.center)
+                .lineSpacing(2)
+                .padding(.top, 4)
+        }
+    }
+
+    // MARK: - Sections
 
     private var autoDetectedSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("Auto-detected", subtitle: "Local tools found on this Mac")
-
+        SettingsSection(title: "Local tools",
+                subtitle: "Auto-detected on this Mac") {
             VStack(spacing: 8) {
                 ForEach(LLMProvider.localProviders, id: \.self) { provider in
                     LocalProviderRow(
@@ -77,12 +73,9 @@ struct ProviderConnectionView: View {
         }
     }
 
-    // MARK: - API Keys
-
     private var apiKeySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("API Keys", subtitle: "Requires admin API keys — not regular project keys")
-
+        SettingsSection(title: "API providers",
+                subtitle: "Paste an API key to track spend") {
             VStack(spacing: 8) {
                 ForEach(LLMProvider.apiKeyProviders, id: \.self) { provider in
                     APIKeyRow(provider: provider)
@@ -90,15 +83,27 @@ struct ProviderConnectionView: View {
             }
         }
     }
+}
 
-    private func sectionHeader(_ title: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundColor(.white.opacity(0.9))
-            Text(subtitle)
-                .font(.system(size: 11, design: .rounded))
-                .foregroundColor(.white.opacity(0.4))
+// MARK: - Section header
+
+private struct SettingsSection<Content: View>: View {
+    let title: String
+    let subtitle: String
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title.uppercased())
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.5))
+                    .tracking(0.6)
+                Text(subtitle)
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundColor(.white.opacity(0.35))
+            }
+            content()
         }
     }
 }
@@ -227,6 +232,7 @@ private struct APIKeyRow: View {
     @State private var isSaved: Bool = false
     @State private var isRevealed: Bool = false
     @State private var errorMessage: String?
+    @State private var isInitialized: Bool = false
 
     var body: some View {
         VStack(spacing: 6) {
@@ -315,11 +321,14 @@ private struct APIKeyRow: View {
                 .padding(.horizontal, 4)
             }
         }
+        .disabled(!isInitialized)
+        .opacity(isInitialized ? 1 : 0.5)
         .onAppear {
             if ProviderAuthManager.shared.loadAPIKey(for: provider) != nil {
                 isSaved = true
                 apiKey = "••••••••••••••••"
             }
+            isInitialized = true
         }
     }
 
@@ -379,6 +388,7 @@ private struct OAuthTokenRow: View {
     @State private var isSaved: Bool = false
     @State private var isRevealed: Bool = false
     @State private var showHelp: Bool = false
+    @State private var isInitialized: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -479,11 +489,14 @@ private struct OAuthTokenRow: View {
                 }
             }
         }
+        .disabled(!isInitialized)
+        .opacity(isInitialized ? 1 : 0.5)
         .onAppear {
             if ProviderAuthManager.shared.loadOAuthToken(for: .claudeCode) != nil {
                 isSaved = true
                 token = "••••••••••••••••"
             }
+            isInitialized = true
         }
     }
 
@@ -501,30 +514,8 @@ private struct OAuthTokenRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let code {
-                HStack(spacing: 6) {
-                    Text(code)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.85))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.white.opacity(0.08))
-                        )
-                        .textSelection(.enabled)
-                    Button {
-                        let pb = NSPasteboard.general
-                        pb.clearContents()
-                        pb.setString(code, forType: .string)
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 9))
-                            .foregroundColor(.white.opacity(0.5))
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Copy")
-                }
-                .padding(.leading, 18)
+                CopyableCode(code: code)
+                    .padding(.leading, 18)
             }
         }
     }
@@ -548,5 +539,53 @@ private struct OAuthTokenRow: View {
         ProviderRegistry.shared.startClaudeUsageTracking(monitor: ClaudeCodeMonitor.shared)
         isSaved = false
         token = ""
+    }
+}
+
+/// Copy-to-clipboard chip with ephemeral "Copied" confirmation in place of
+/// the copy icon for ~1.5s after a successful copy.
+private struct CopyableCode: View {
+    let code: String
+    @State private var copied = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(code)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(.white.opacity(0.85))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.white.opacity(0.08))
+                )
+                .textSelection(.enabled)
+            Button(action: copy) {
+                Group {
+                    if copied {
+                        Text("Copied")
+                            .font(.system(size: 9, weight: .medium, design: .rounded))
+                            .foregroundColor(Color(hex: "b4e50d"))
+                    } else {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                }
+                .frame(minWidth: 12, alignment: .leading)
+            }
+            .buttonStyle(.borderless)
+            .help("Copy")
+        }
+    }
+
+    private func copy() {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(code, forType: .string)
+        withAnimation(.easeInOut(duration: 0.15)) { copied = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            withAnimation(.easeInOut(duration: 0.15)) { copied = false }
+        }
     }
 }

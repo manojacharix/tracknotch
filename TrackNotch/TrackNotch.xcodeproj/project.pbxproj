@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0456BBCF33A87C9BBDD2440A /* ArrowTickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39B8567D8CA8B1BC2120FF2 /* ArrowTickerView.swift */; };
 		04CC6DD0C379B18680622E17 /* OpenAIUsageFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501987241AF4B13BD9548CD5 /* OpenAIUsageFetcher.swift */; };
+		062B7F92613C3D752155D204 /* AntigravityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7495886DA6789ADCFB619BA5 /* AntigravityMonitor.swift */; };
 		0B3BE6F7AB8A744E42C05CEA /* ProviderModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1887D39548E5BA6421CCDE /* ProviderModels.swift */; };
 		1C57FE4BBC7ECAD7F6316532 /* NotchWindowGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F039CEB87EA876288574015 /* NotchWindowGeometryTests.swift */; };
 		214C0937CF2DD66F2DEE2803 /* ChatGPTDesktopMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D95C3B30EC26F34A54E0999F /* ChatGPTDesktopMonitor.swift */; };
@@ -83,6 +84,7 @@
 		595A7639BF25760362DFB470 /* ExternalMonitorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalMonitorView.swift; sourceTree = "<group>"; };
 		68C2E0093D64D1787090C569 /* TrackNotch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TrackNotch.entitlements; sourceTree = "<group>"; };
 		72A0E19B59A2612ADE10BA1D /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		7495886DA6789ADCFB619BA5 /* AntigravityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AntigravityMonitor.swift; sourceTree = "<group>"; };
 		74C7AE8194D2DF8058456605 /* google-mono.svg */ = {isa = PBXFileReference; path = "google-mono.svg"; sourceTree = "<group>"; };
 		7F039CEB87EA876288574015 /* NotchWindowGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchWindowGeometryTests.swift; sourceTree = "<group>"; };
 		7FAE47BF2589132EE5CF56E1 /* antigravity-mono.svg */ = {isa = PBXFileReference; path = "antigravity-mono.svg"; sourceTree = "<group>"; };
@@ -130,6 +132,7 @@
 		04DC8FCC4D743E3EEDF01CC3 /* Monitors */ = {
 			isa = PBXGroup;
 			children = (
+				7495886DA6789ADCFB619BA5 /* AntigravityMonitor.swift */,
 				D95C3B30EC26F34A54E0999F /* ChatGPTDesktopMonitor.swift */,
 				C0CE90F73F315B839299F173 /* ClaudeCodeMonitor.swift */,
 				856156A9648007819F8071AC /* CodexMonitor.swift */,
@@ -449,6 +452,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8EBC2DC758848AD81AA0AEB8 /* AnthropicUsageFetcher.swift in Sources */,
+				062B7F92613C3D752155D204 /* AntigravityMonitor.swift in Sources */,
 				BDCA689234FDA1CC45CE07F4 /* AppDelegate.swift in Sources */,
 				2A41C73411A10E868BB0CAC2 /* AppSettings.swift in Sources */,
 				BA9E04A0BD693A18438E1E8D /* AppVersion.swift in Sources */,
