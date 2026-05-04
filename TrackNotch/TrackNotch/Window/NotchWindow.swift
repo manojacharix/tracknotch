@@ -200,7 +200,7 @@ private final class StripView: NSView {
 /// Large panel covering the full notch + wing area — display only, fully click-through.
 /// A separate StripPanel (notch-height only) sits on top to receive clicks.
 final class NotchWindow: NSPanel {
-    private let expandedWindowWidth: CGFloat = 380
+    private let expandedWindowWidth: CGFloat = 420
     private let expandedWindowHeight: CGFloat = 280
 
     let targetScreen: NSScreen
@@ -498,7 +498,7 @@ final class NotchWindow: NSPanel {
 
         let leftWingWidth = isDropdownVisible ? 0 : renderedWingWidth(count: leftCount)
         let rightWingWidth = isDropdownVisible ? 0 : renderedWingWidth(count: rightCount)
-        let contentWidth = isDropdownVisible ? 380 : max(geo.notchWidth, leftWingWidth + geo.notchWidth + rightWingWidth)
+        let contentWidth = isDropdownVisible ? expandedWindowWidth : max(geo.notchWidth, leftWingWidth + geo.notchWidth + rightWingWidth)
         let hitPadding: CGFloat = isDropdownVisible ? 0 : 6
 
         let x: CGFloat

@@ -2,18 +2,57 @@ import SwiftUI
 import PhosphorSwift
 import UniformTypeIdentifiers
 
+/// Stable identity for a single dropdown grid cell. A provider that
+/// publishes both a primary (e.g. 5h) and secondary (e.g. weekly) quota
+/// renders as TWO independent cells with distinct keys, so the user can
+/// reorder them separately. Wing-side `orderedProviders` is unaffected
+/// — that remains a single ordering of `LLMProvider`.
+struct DropdownCellKey: Hashable, Codable {
+    let provider: LLMProvider
+    let secondary: Bool
+
+    /// Stable string for UserDefaults / drag pasteboard.
+    var serialized: String { "\(provider.rawValue)|\(secondary ? "s" : "p")" }
+
+    init(provider: LLMProvider, secondary: Bool) {
+        self.provider = provider
+        self.secondary = secondary
+    }
+
+    init?(serialized s: String) {
+        let parts = s.split(separator: "|")
+        guard parts.count == 2,
+              let p = LLMProvider(rawValue: String(parts[0])) else { return nil }
+        self.provider = p
+        self.secondary = parts[1] == "s"
+    }
+}
+
 /// Content rendered inside the expanded notch shape.
 /// No background or shadow — those are owned by NotchRootView's NotchShape.
 struct DropdownContent: View {
     var onDismiss: (() -> Void)? = nil
     @Binding var isEditMode: Bool
     @EnvironmentObject var registry: ProviderRegistry
-    @State private var providerOrder: [LLMProvider] = []
-    @State private var draggingProvider: LLMProvider? = nil
-    @State private var dropTargetProvider: LLMProvider? = nil
+    @State private var cellOrder: [DropdownCellKey] = []
+    @State private var draggingCell: DropdownCellKey? = nil
+    @State private var dropTargetCell: DropdownCellKey? = nil
 
-    private var visibleProviders: [LLMProvider] {
-        providerOrder.filter { registry.usageMap[$0] != nil }
+    private static let cellOrderKey = "dropdownCellOrder"
+
+    /// Cells the registry currently has data for, in the user-defined order.
+    private var visibleCells: [DropdownCell] {
+        cellOrder.compactMap { key in
+            guard let usage = registry.usageMap[key.provider] else { return nil }
+            // Primary only renders if percentage is meaningful (always true).
+            // Secondary renders only when secondaryPercentage exists and the
+            // provider isn't an API-token billing type.
+            if key.secondary {
+                guard usage.secondaryPercentage != nil,
+                      usage.billingType != .apiToken else { return nil }
+            }
+            return DropdownCell(key: key, usage: usage)
+        }
     }
 
     private let columns = [
@@ -23,7 +62,7 @@ struct DropdownContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if visibleProviders.isEmpty {
+            if visibleCells.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "plus.circle.dashed")
                         .font(.system(size: 24))
@@ -48,20 +87,9 @@ struct DropdownContent: View {
                 .padding(.vertical, 20)
 
             } else {
-                // Build a flat list of cells: a provider with both 5h and 7d
-                // data emits two cells (primary then secondary).
-                let cells: [DropdownCell] = visibleProviders.flatMap { provider -> [DropdownCell] in
-                    guard let usage = registry.usageMap[provider] else { return [] }
-                    let primary = DropdownCell(provider: provider, usage: usage, secondary: false)
-                    if usage.secondaryPercentage != nil && usage.billingType != .apiToken {
-                        return [primary, DropdownCell(provider: provider, usage: usage, secondary: true)]
-                    }
-                    return [primary]
-                }
-
                 LazyVGrid(columns: columns, spacing: 6) {
-                    ForEach(Array(cells.enumerated()), id: \.element) { idx, cell in
-                        pillCell(provider: cell.provider, usage: cell.usage, secondary: cell.secondary, index: idx)
+                    ForEach(Array(visibleCells.enumerated()), id: \.element) { idx, cell in
+                        pillCell(cell: cell, index: idx)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -70,17 +98,20 @@ struct DropdownContent: View {
             }
         }
         .animation(.interactiveSpring(response: 0.32, dampingFraction: 0.8, blendDuration: 0.08), value: isEditMode)
-        .onAppear { syncProviderOrder() }
-        .onChange(of: registry.usageMap.count) { _ in syncProviderOrder() }
+        .onAppear {
+            loadCellOrder()
+            syncCellOrder()
+        }
+        .onChange(of: registry.usageMap.count) { _ in syncCellOrder() }
         .onChange(of: isEditMode) { editing in
-            if !editing { registry.saveProviderOrder(providerOrder) }
+            if !editing { saveCellOrder() }
         }
     }
 
     @ViewBuilder
-    private func pillCell(provider: LLMProvider, usage: ProviderUsage, secondary: Bool, index: Int) -> some View {
+    private func pillCell(cell: DropdownCell, index: Int) -> some View {
         HStack(spacing: 4) {
-            if isEditMode && !secondary {
+            if isEditMode {
                 Ph.dotsSixVertical.bold
                     .resizable()
                     .scaledToFit()
@@ -89,70 +120,80 @@ struct DropdownContent: View {
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
 
-            DropdownProviderPill(usage: usage, isEditMode: isEditMode, appearIndex: index, secondary: secondary)
+            DropdownProviderPill(usage: cell.usage, isEditMode: isEditMode, appearIndex: index, secondary: cell.key.secondary)
         }
-        .opacity(draggingProvider == provider ? 0.4 : 1)
+        .opacity(draggingCell == cell.key ? 0.4 : 1)
         .overlay(
-            dropTargetProvider == provider && draggingProvider != provider && !secondary
+            dropTargetCell == cell.key && draggingCell != cell.key
                 ? RoundedRectangle(cornerRadius: 26)
                     .stroke(Color.white.opacity(0.3), lineWidth: 1.5)
                 : nil
         )
-        // Drag is enabled on every visible pill. For dual-quota providers
-        // (primary + secondary cells), both cells drag the same underlying
-        // provider — so picking up either cell reorders the pair together.
         .onDrag {
-            draggingProvider = provider
-            return NSItemProvider(object: provider.rawValue as NSString)
+            draggingCell = cell.key
+            return NSItemProvider(object: cell.key.serialized as NSString)
         }
-        .onDrop(of: [UTType.text], delegate: ProviderDropDelegate(
-            target: provider,
-            providers: $providerOrder,
-            dragging: $draggingProvider,
-            dropTarget: $dropTargetProvider
+        .onDrop(of: [UTType.text], delegate: CellDropDelegate(
+            target: cell.key,
+            cells: $cellOrder,
+            dragging: $draggingCell,
+            dropTarget: $dropTargetCell
         ))
     }
 
-    private func syncProviderOrder() {
-        let current = registry.orderedProviders
-        // Add any new providers not in local order
-        let missing = current.filter { !providerOrder.contains($0) }
-        if !missing.isEmpty {
-            providerOrder.append(contentsOf: missing)
+    /// Reconcile `cellOrder` against current registry state. Adds new cells
+    /// (newly-connected providers; dual-quota providers gaining a secondary
+    /// window) and prunes ones that are no longer applicable.
+    private func syncCellOrder() {
+        // Build the canonical set of cells the registry can produce.
+        var canonical: [DropdownCellKey] = []
+        for provider in registry.orderedProviders {
+            guard let usage = registry.usageMap[provider] else { continue }
+            canonical.append(DropdownCellKey(provider: provider, secondary: false))
+            if usage.secondaryPercentage != nil && usage.billingType != .apiToken {
+                canonical.append(DropdownCellKey(provider: provider, secondary: true))
+            }
         }
-        // Prune providers that are no longer connected
-        providerOrder.removeAll { !current.contains($0) }
-        // If local order is empty, just take the registry order
-        if providerOrder.isEmpty {
-            providerOrder = current
+        let canonicalSet = Set(canonical)
+        // Drop entries from local order that no longer exist in canonical.
+        cellOrder.removeAll { !canonicalSet.contains($0) }
+        // Append any canonical entries we don't yet have, preserving the
+        // canonical ordering for new arrivals.
+        let existing = Set(cellOrder)
+        for key in canonical where !existing.contains(key) {
+            cellOrder.append(key)
         }
+    }
+
+    private func loadCellOrder() {
+        guard let raw = UserDefaults.standard.array(forKey: Self.cellOrderKey) as? [String] else { return }
+        cellOrder = raw.compactMap(DropdownCellKey.init(serialized:))
+    }
+
+    private func saveCellOrder() {
+        let raw = cellOrder.map(\.serialized)
+        UserDefaults.standard.set(raw, forKey: Self.cellOrderKey)
     }
 }
 
-/// One row in the dropdown grid. A dual-quota provider (e.g. Claude Code with
-/// OAuth → has both 5h and 7d data) emits two cells: primary then secondary.
+/// One row in the dropdown grid. Dual-quota providers emit two cells with
+/// distinct `DropdownCellKey`s (one primary, one secondary) so the user
+/// can reorder them independently.
 private struct DropdownCell: Hashable {
-    let provider: LLMProvider
+    let key: DropdownCellKey
     let usage: ProviderUsage
-    let secondary: Bool
 
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(provider)
-        hasher.combine(secondary)
-    }
-
-    static func == (lhs: DropdownCell, rhs: DropdownCell) -> Bool {
-        lhs.provider == rhs.provider && lhs.secondary == rhs.secondary
-    }
+    func hash(into hasher: inout Hasher) { hasher.combine(key) }
+    static func == (lhs: DropdownCell, rhs: DropdownCell) -> Bool { lhs.key == rhs.key }
 }
 
 // MARK: - Drop delegate for grid reorder
 
-private struct ProviderDropDelegate: DropDelegate {
-    let target: LLMProvider
-    @Binding var providers: [LLMProvider]
-    @Binding var dragging: LLMProvider?
-    @Binding var dropTarget: LLMProvider?
+private struct CellDropDelegate: DropDelegate {
+    let target: DropdownCellKey
+    @Binding var cells: [DropdownCellKey]
+    @Binding var dragging: DropdownCellKey?
+    @Binding var dropTarget: DropdownCellKey?
 
     func dropEntered(info: DropInfo) { dropTarget = target }
     func dropExited(info: DropInfo)  { if dropTarget == target { dropTarget = nil } }
@@ -160,12 +201,12 @@ private struct ProviderDropDelegate: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         defer { dragging = nil; dropTarget = nil }
         guard let from = dragging,
-              let fromIdx = providers.firstIndex(of: from),
-              let toIdx   = providers.firstIndex(of: target),
+              let fromIdx = cells.firstIndex(of: from),
+              let toIdx   = cells.firstIndex(of: target),
               fromIdx != toIdx
         else { return false }
         withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.8, blendDuration: 0.08)) {
-            providers.move(fromOffsets: IndexSet(integer: fromIdx), toOffset: toIdx > fromIdx ? toIdx + 1 : toIdx)
+            cells.move(fromOffsets: IndexSet(integer: fromIdx), toOffset: toIdx > fromIdx ? toIdx + 1 : toIdx)
         }
         return true
     }
