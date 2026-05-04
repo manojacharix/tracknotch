@@ -10,7 +10,7 @@ private let pillExpandDelay:   Double = 0.0
 private let iconExpandDelay:   Double = 0.12
 private let iconCollapseDelay: Double = 0.0
 private let pillCollapseDelay: Double = 0.18
-private let staggerStep:       Double = 0.05
+private let staggerStep:       Double = 0.025
 
 // Expanded notch dimensions
 private let expandedMaxWidth:  CGFloat = 380
@@ -27,6 +27,19 @@ struct NotchRootView: View {
 
     @State private var iconsVisible: Bool = false
     @State private var pillExpanded: Bool = false
+
+    /// Per-icon slide state, keyed by provider. Parent owns this so the
+    /// per-icon spring animation runs reliably from prop changes via
+    /// `.animation(value:)` in NotchSlideIcon — replaces the previous
+    /// `.onChange(of: isShowing)` pattern which silently failed to fire
+    /// on the slide-back transition (logged proof in TN.diag traces).
+    /// `true` = icon slid out (visible at offset 0). `false` = retracted
+    /// (at hiddenOffset, opacity 0 — clipped by wing's `.clipped()`).
+    @State private var iconSlideState: [LLMProvider: Bool] = [:]
+    /// Pending per-icon stagger work items. Tracked so a fresh transition
+    /// (e.g. hover-in mid-collapse) can cancel in-flight staggers cleanly
+    /// before kicking off a new sequence.
+    @State private var iconStaggerWorkItems: [DispatchWorkItem] = []
 
     // Dropdown expansion state
     @State private var isExpanded: Bool = false
@@ -94,8 +107,24 @@ struct NotchRootView: View {
         return registry.activeProviders
     }
 
-    private var leftProviders:  [LLMProvider] { targetProviders.filter { $0.notchWing == .left } }
-    private var rightProviders: [LLMProvider] { targetProviders.filter { $0.notchWing == .right } }
+    /// Providers currently in the wing view tree. Union of `targetProviders`
+    /// and any provider still tracked in `iconSlideState` — the latter
+    /// includes icons mid-animation (sliding back into the notch). Without
+    /// this union, hover-out instantly drops connected-only icons from
+    /// `targetProviders` → they vanish from the ForEach before collapse()
+    /// can stagger their slide-back. Preserves order from connectedProviders
+    /// so left/right partitioning stays stable.
+    private var renderedProviders: [LLMProvider] {
+        let target = targetProviders
+        let inFlight = Set(iconSlideState.keys)
+        let extras = registry.connectedProviders.filter {
+            inFlight.contains($0) && !target.contains($0) && registry.usageMap[$0] != nil
+        }
+        return target + extras
+    }
+
+    private var leftProviders:  [LLMProvider] { renderedProviders.filter { $0.notchWing == .left } }
+    private var rightProviders: [LLMProvider] { renderedProviders.filter { $0.notchWing == .right } }
 
     private func wingWidth(count: Int) -> CGFloat {
         guard count > 0 else { return 0 }
@@ -278,59 +307,114 @@ struct NotchRootView: View {
 
     private func expand() {
         // No-op if expand is already in flight OR the pill is already out.
-        // Previous guard only caught the fully-settled (pillExpanded &&
-        // iconsVisible) state, so a hover bounce that re-fired expand()
-        // while expandIconsWork was still pending would tear down and
-        // restart — visible double slide-out. Treat any in-flight or
-        // already-extended state as "we're going where you asked," noop.
         if pillExpanded || expandIconsWork != nil { return }
         cancelPendingWork()
         let nonce = beginTransition()
         lastHoverExpandTimestamp = ProcessInfo.processInfo.systemUptime
-        // Force the wing icons to be re-created so their staggered slide-in
-        // animation re-runs cleanly. SwiftUI batches iconsVisible false→true
-        // into a single render pass otherwise, so the per-icon onAppear/
-        // onChange stagger never gets a chance to fire.
-        expandCounter &+= 1
-        iconsVisible = false
+
+        // Initialize all icons to retracted (false). SwiftUI's
+        // .animation(value: isSlid) on each icon will spring out from
+        // hiddenOffset → 0 when the parent flips this to true below.
+        // Setting non-animated here so the initial state is established
+        // before the wing subtree mounts.
+        let allLeft  = leftProviders
+        let allRight = rightProviders
+        for provider in allLeft  { iconSlideState[provider] = false }
+        for provider in allRight { iconSlideState[provider] = false }
+
+        // Wing pill springs out.
         pillExpanded = false
-        withAnimation(.interactiveSpring(response: 0.38, dampingFraction: 0.82, blendDuration: 0.1)) { pillExpanded = true }
-        let work = DispatchWorkItem {
-            guard transitionNonce == nonce else { return }
-            withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.78, blendDuration: 0.08)) { iconsVisible = true }
+        withAnimation(.interactiveSpring(response: 0.38, dampingFraction: 0.82, blendDuration: 0.1)) {
+            pillExpanded = true
         }
-        expandIconsWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + iconExpandDelay, execute: work)
+
+        // After the pill begins to extend (iconExpandDelay = 0.12s),
+        // stagger each icon's slide-out flip — innermost-first.
+        //   Left wing layout: Spacer | idx0 ... idx(N-1). idx=N-1 is
+        //   rightmost, closest to notch (innermost) → fires at delay 0.
+        //   Right wing layout: idx0 ... idx(N-1) | Spacer. idx=0 is
+        //   leftmost, closest to notch (innermost) → fires at delay 0.
+        let kickoff = DispatchWorkItem {
+            guard transitionNonce == nonce else { return }
+            let leftCount = allLeft.count
+            for (idx, provider) in allLeft.enumerated() {
+                let delay = Double(leftCount - 1 - idx) * staggerStep
+                let perIcon = DispatchWorkItem {
+                    guard transitionNonce == nonce else { return }
+                    iconSlideState[provider] = true
+                }
+                iconStaggerWorkItems.append(perIcon)
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: perIcon)
+            }
+            for (idx, provider) in allRight.enumerated() {
+                let delay = Double(idx) * staggerStep
+                let perIcon = DispatchWorkItem {
+                    guard transitionNonce == nonce else { return }
+                    iconSlideState[provider] = true
+                }
+                iconStaggerWorkItems.append(perIcon)
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: perIcon)
+            }
+        }
+        expandIconsWork = kickoff
+        DispatchQueue.main.asyncAfter(deadline: .now() + iconExpandDelay, execute: kickoff)
     }
 
     private func collapse() {
-        // Idempotency guard. If the wing isn't actually out, there's nothing
-        // to collapse — bail before cancelling pending expand work that may
-        // have just been scheduled by a fresh hover-on.
+        // Idempotency guard.
         if !pillExpanded { return }
         cancelPendingWork()
         let nonce = beginTransition()
-        // Step 1: per-icon staggered slide back toward the notch — handled
-        // inside NotchSlideIcon's onChange when iconsVisible flips false.
-        // This is the exact reverse of the expand-side stagger (innermost
-        // emerges first on hover-in → outermost retracts first on hover-out).
-        iconsVisible = false
-        // Step 2: once the icon stagger has played out, shrink the pill
-        // back into the notch using the SAME spring as expand() — gives
-        // the whole gesture mirrored timing. Wait window must cover the
-        // worst-case innermost-icon settle: (maxCount-1)*staggerStep
-        // (icon's own collapseDelay) + spring settle (~0.32s) + opacity
-        // tail (0.10s). At 5 icons/side: 0.20 + 0.32 + 0.10 = 0.62s.
-        // Anything shorter unmounts the wing subtree mid-slide and the
-        // innermost icon's retraction is clipped to nothing instead of
-        // being seen — making the staggered slide-back appear to "not
-        // animate" past the first icon or two.
-        let iconCollapseWindow: Double = 0.62
+
+        // Per-icon staggered slide-back. Innermost retracts first.
+        // `leftProviders`/`rightProviders` derive from `renderedProviders`
+        // (a union of `targetProviders` and in-flight `iconSlideState`
+        // entries) so icons stay in the view tree through the slide-back
+        // even after `isHovered` flipped false and `targetProviders`
+        // shrunk.
+        let allLeft  = leftProviders
+        let allRight = rightProviders
+        NSLog("[TN.diag] collapse() scheduling slide-back for \(allLeft.count + allRight.count) icons")
+        let leftCount = allLeft.count
+        var maxDelay: Double = 0
+        for (idx, provider) in allLeft.enumerated() {
+            let delay = Double(leftCount - 1 - idx) * staggerStep
+            maxDelay = max(maxDelay, delay)
+            let perIcon = DispatchWorkItem {
+                guard transitionNonce == nonce else { return }
+                NSLog("[TN.diag] slide-back flip provider=\(provider.rawValue) → false")
+                iconSlideState[provider] = false
+            }
+            iconStaggerWorkItems.append(perIcon)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: perIcon)
+        }
+        for (idx, provider) in allRight.enumerated() {
+            let delay = Double(idx) * staggerStep
+            maxDelay = max(maxDelay, delay)
+            let perIcon = DispatchWorkItem {
+                guard transitionNonce == nonce else { return }
+                NSLog("[TN.diag] slide-back flip provider=\(provider.rawValue) → false")
+                iconSlideState[provider] = false
+            }
+            iconStaggerWorkItems.append(perIcon)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: perIcon)
+        }
+
+        // After the staggered slide-back fully settles, shrink the pill.
+        // Budget: longest stagger delay + per-icon spring settle
+        // (~0.18s for response 0.20).
+        let iconCollapseWindow: Double = maxDelay + 0.22
         let work = DispatchWorkItem {
             guard transitionNonce == nonce else { return }
             withAnimation(.interactiveSpring(response: 0.38, dampingFraction: 0.82, blendDuration: 0.1)) {
                 pillExpanded = false
             }
+            // Drop iconSlideState entries that aren't in the current
+            // targetProviders set — they were "in-flight" only and
+            // should now be released so renderedProviders no longer
+            // keeps them in the tree.
+            let target = Set(targetProviders)
+            iconSlideState = iconSlideState.filter { target.contains($0.key) }
         }
         collapsePillWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + iconCollapseWindow, execute: work)
@@ -492,6 +576,11 @@ struct NotchRootView: View {
         hoverSettleWork = nil
         iconReemergeWork?.cancel()
         iconReemergeWork = nil
+        // Cancel any in-flight per-icon stagger flips so a fresh
+        // expand/collapse doesn't race the previous transition's
+        // pending iconSlideState[provider] = X mutations.
+        for w in iconStaggerWorkItems { w.cancel() }
+        iconStaggerWorkItems.removeAll()
     }
 
     @discardableResult
@@ -621,14 +710,14 @@ struct NotchRootView: View {
             if !leftProviders.isEmpty {
                 HStack(spacing: iconGap) {
                     Spacer(minLength: 0)
-                    ForEach(Array(leftProviders.enumerated()), id: \.element) { idx, provider in
+                    ForEach(Array(leftProviders.enumerated()), id: \.element) { _, provider in
                         if let usage = registry.usageMap[provider] {
-                            let expandDelay   = Double(leftProviders.count - 1 - idx) * staggerStep
-                            let collapseDelay = Double(idx) * staggerStep
-                            NotchSlideIcon(usage: usage, direction: .right,
-                                           expandDelay: expandDelay, collapseDelay: collapseDelay,
-                                           isShowing: iconsVisible)
-                                .id("left-\(provider.rawValue)-\(expandCounter)")
+                            NotchSlideIcon(
+                                usage: usage,
+                                direction: .right,
+                                isSlid: iconSlideState[provider] ?? false
+                            )
+                            .id("left-\(provider.rawValue)")
                         }
                     }
                 }
@@ -642,17 +731,14 @@ struct NotchRootView: View {
 
             if !rightProviders.isEmpty {
                 HStack(spacing: iconGap) {
-                    ForEach(Array(rightProviders.enumerated()), id: \.element) { idx, provider in
+                    ForEach(Array(rightProviders.enumerated()), id: \.element) { _, provider in
                         if let usage = registry.usageMap[provider] {
-                            // Outermost icon (highest idx) slides in FIRST,
-                            // mirroring the left wing's stagger and matching
-                            // how slide-out plays in reverse.
-                            let expandDelay   = Double(rightProviders.count - 1 - idx) * staggerStep
-                            let collapseDelay = Double(rightProviders.count - 1 - idx) * staggerStep
-                            NotchSlideIcon(usage: usage, direction: .left,
-                                           expandDelay: expandDelay, collapseDelay: collapseDelay,
-                                           isShowing: iconsVisible)
-                                .id("right-\(provider.rawValue)-\(expandCounter)")
+                            NotchSlideIcon(
+                                usage: usage,
+                                direction: .left,
+                                isSlid: iconSlideState[provider] ?? false
+                            )
+                            .id("right-\(provider.rawValue)")
                         }
                     }
                     Spacer(minLength: 0)
@@ -670,21 +756,17 @@ struct NotchRootView: View {
 
 private enum SlideDirection { case left, right }
 
+/// Pure-render icon. No internal state — the parent
+/// (`NotchRootView.iconSlideState[provider]`) drives `isSlid`, and
+/// SwiftUI's `.animation(value:)` modifier applies the spring on every
+/// flip. This replaces the prior `.onChange(of: isShowing) +
+/// DispatchQueue + withAnimation` pattern which failed to fire on
+/// slide-back. Stagger timing is orchestrated by the parent's per-icon
+/// dispatch — each provider's slide state flips on its own delay.
 private struct NotchSlideIcon: View {
     let usage: ProviderUsage
     let direction: SlideDirection
-    let expandDelay: Double
-    let collapseDelay: Double
-    let isShowing: Bool
-
-    /// Drives the horizontal offset (slide). Animated with a spring on
-    /// both directions — the slide is the dominant motion the user reads.
-    @State private var slidIn = false
-    /// Drives opacity. Decoupled from `slidIn` so we can hold opacity at
-    /// 1 during the entire slide-back and let the wing's `.clipped()`
-    /// mask the icon as it crosses the notch edge — without this the
-    /// icon would fade out mid-air before reaching the notch.
-    @State private var faded = false
+    let isSlid: Bool
     private let slideDistance: CGFloat = 36
 
     private var hiddenOffset: CGFloat {
@@ -692,55 +774,14 @@ private struct NotchSlideIcon: View {
     }
 
     var body: some View {
-        WingIconView(usage: usage)
-            .opacity(faded ? 1 : 0)
-            .offset(x: slidIn ? 0 : hiddenOffset)
-            .onAppear {
-                slidIn = false
-                faded = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + expandDelay) {
-                    withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.78, blendDuration: 0.08)) {
-                        slidIn = true
-                        faded = true
-                    }
-                }
-            }
-            .onChange(of: isShowing) { showing in
-                if showing {
-                    // Slide-out (hover-in): icon flies from inside the
-                    // notch to its settled wing position. Opacity ramps
-                    // up alongside the slide so it appears to materialize
-                    // as it crosses the notch edge.
-                    slidIn = false
-                    faded = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + expandDelay) {
-                        withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.78, blendDuration: 0.08)) {
-                            slidIn = true
-                            faded = true
-                        }
-                    }
-                } else {
-                    // Slide-in (hover-out): exact reverse — icon retracts
-                    // toward the notch using the SAME spring. Opacity is
-                    // held at 1 during the slide so the icon visibly
-                    // travels into the notch (the wing's .clipped() mask
-                    // hides it past the boundary). Opacity drops to 0 in
-                    // a brief tail at the END of the slide so any pixel
-                    // still escaping the clip mask vanishes cleanly.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + collapseDelay) {
-                        withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.78, blendDuration: 0.08)) {
-                            slidIn = false
-                        }
-                        // Opacity tail — runs after the spring is mostly
-                        // settled, fades from 1 to 0 over a short window.
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
-                            withAnimation(.easeOut(duration: 0.10)) {
-                                faded = false
-                            }
-                        }
-                    }
-                }
-            }
+        let _ = NSLog("[TN.diag] NotchSlideIcon body provider=\(usage.provider.rawValue) isSlid=\(isSlid)")
+        return WingIconView(usage: usage)
+            .opacity(isSlid ? 1 : 0)
+            .offset(x: isSlid ? 0 : hiddenOffset)
+            .animation(
+                .interactiveSpring(response: 0.20, dampingFraction: 0.82, blendDuration: 0.05),
+                value: isSlid
+            )
     }
 }
 
