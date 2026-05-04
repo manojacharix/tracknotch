@@ -177,6 +177,14 @@ final class ProviderRegistry: ObservableObject {
     /// True while the cursor is hovering over the external monitor panel.
     @Published var isExternalHovered: Bool = false
 
+    /// Monotonically incremented on every real (post-dedupe) StripView
+    /// mouseEntered. Consumers (NotchRootView's hover gate) snapshot this
+    /// value at the moment they want to gate hover, then wait for it to
+    /// strictly exceed the snapshot before allowing hover to fire again.
+    /// Event-counted gating is immune to mid-animation hover thrash and
+    /// stale-flag races that timer-based gates suffer from.
+    @Published var stripEnterCount: Int = 0
+
     /// Providers actively consuming OR still within the 2s linger window after going idle.
     var activeProviders: [LLMProvider] {
         orderedProviders.filter { provider in

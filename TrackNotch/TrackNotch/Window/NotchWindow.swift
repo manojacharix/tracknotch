@@ -84,15 +84,13 @@ private final class StripPanel: NSPanel {
         }
         switch event.type {
         case .leftMouseDown:
-            #if DEBUG
-            print("[StripPanel] sendEvent type=1 at \(event.locationInWindow)")
-            #endif
-            pendingMouseDown = bounds.contains(event.locationInWindow)
+            let inside = bounds.contains(event.locationInWindow)
+            NSLog("[TN.diag] StripPanel down at=\(event.locationInWindow) bounds=\(bounds) inside=\(inside)")
+            pendingMouseDown = inside
         case .leftMouseUp:
-            #if DEBUG
-            print("[StripPanel] sendEvent type=2 at \(event.locationInWindow)")
-            #endif
-            if pendingMouseDown && bounds.contains(event.locationInWindow) {
+            let inside = bounds.contains(event.locationInWindow)
+            NSLog("[TN.diag] StripPanel up at=\(event.locationInWindow) inside=\(inside) pending=\(pendingMouseDown)")
+            if pendingMouseDown && inside {
                 onNotchClick?()
             }
             pendingMouseDown = false
@@ -112,6 +110,23 @@ private final class StripView: NSView {
     /// Rect within bounds that accepts clicks. nil = full bounds.
     var clickableRect: NSRect?
 
+    /// Last bounds we installed a tracking area for. Used to skip rebuild when
+    /// AppKit fires updateTrackingAreas() but bounds haven't actually changed —
+    /// each rebuild creates a new .activeAlways area which immediately fires
+    /// mouseEntered if the cursor is inside, causing a hover-thrash loop.
+    private var installedTrackingRect: NSRect = .null
+
+    /// Timestamp-based debounce for AppKit's burst-firing enter/exit during
+    /// tracking-area rebuilds. Enter coalesce window is short (50ms) so real
+    /// entries feel responsive; exit window is longer (250ms) because the
+    /// dominant noise source is boundary wobble at the wing edge during
+    /// animation. The cursor-truth check on the consumer side
+    /// (NotchRootView's hoverSettleWork) is the authoritative guard for
+    /// "AppKit lied about cursor leaving" — producer-side debounce is
+    /// intentionally minimal.
+    private var lastEnterTimestamp: TimeInterval = 0
+    private var lastExitTimestamp:  TimeInterval = 0
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateTrackingArea()
@@ -123,6 +138,7 @@ private final class StripView: NSView {
     }
 
     private func updateTrackingArea() {
+        if installedTrackingRect == bounds, !trackingAreas.isEmpty { return }
         trackingAreas.forEach { removeTrackingArea($0) }
         addTrackingArea(NSTrackingArea(
             rect: bounds,
@@ -130,18 +146,22 @@ private final class StripView: NSView {
             owner: self,
             userInfo: nil
         ))
+        installedTrackingRect = bounds
     }
 
     override func mouseEntered(with event: NSEvent) {
-        #if DEBUG
-        print("[StripView] mouseEntered")
-        #endif
+        let now = event.timestamp
+        if now - lastEnterTimestamp < 0.05 { return }
+        lastEnterTimestamp = now
+        NSLog("[TN.diag] StripView mouseEntered")
         onHoverEnter?()
     }
+
     override func mouseExited(with event: NSEvent) {
-        #if DEBUG
-        print("[StripView] mouseExited")
-        #endif
+        let now = event.timestamp
+        if now - lastExitTimestamp < 0.25 { return }
+        lastExitTimestamp = now
+        NSLog("[TN.diag] StripView mouseExited")
         onHoverExit?()
     }
     override func mouseDown(with event: NSEvent) {
@@ -192,8 +212,12 @@ final class NotchWindow: NSPanel {
     private var externalHoverMonitor: Any?
     private var hoverLeaveTimer: Timer?
     private var outsideClickMonitor: Any?
+    private var notchClickMonitor: Any?
     private var collapseFinalizeWork: DispatchWorkItem?
     private var collapseObserver: Any?
+    /// Reentry guard for toggleDropdown — both StripPanel.sendEvent and the
+    /// global notchClickMonitor can fire for the same physical click.
+    private var lastToggleTime: TimeInterval = 0
 
     /// Publishes the measured dropdown content height from SwiftUI.
     /// Consumed by `interactiveContentRectInView` to compute a tight hit-test rect.
@@ -354,12 +378,21 @@ final class NotchWindow: NSPanel {
     private func installStripPanel() {
         let strip = StripPanel(frame: activeStripRect)
         strip.onNotchClick = { [weak self] in
+            NSLog("[TN.diag] strip.onNotchClick fired isDropdownVisible=\(self?.isDropdownVisible ?? false)")
             self?.haptic()
             self?.toggleDropdown()
         }
         strip.onHoverEnter = { [weak self] in
             self?.haptic()
+            // Increment the count BEFORE flipping isExternalHovered so the
+            // shouldShow→true callback in NotchRootView observes the new
+            // count and the hover-after-close gate clears in the same turn.
+            ProviderRegistry.shared.stripEnterCount += 1
+            NSLog("[TN.diag] stripEnterCount=\(ProviderRegistry.shared.stripEnterCount)")
             ProviderRegistry.shared.isExternalHovered = true
+            // Refresh ONLY the clickableRect (hardwareStripRect itself is
+            // hover-independent so the panel frame won't change — this just
+            // expands the click hit zone to cover the now-visible wings).
             self?.updateStripFrame()
         }
         strip.onHoverExit = { [weak self] in
@@ -368,6 +401,30 @@ final class NotchWindow: NSPanel {
         }
         strip.orderFrontRegardless()
         stripPanel = strip
+
+        // Global click monitor: catches left-mouse-down anywhere on screen
+        // and fires the toggle if the click landed inside the active strip
+        // rect. Bypasses the .nonactivatingPanel routing problem entirely.
+        // Global mouseDown monitor as a click fallback for hardware-notched
+        // displays where .nonactivatingPanel.sendEvent routing in the menu-
+        // bar zone is unreliable. NOTE: this only catches clicks landing on
+        // OTHER apps' windows. Clicks landing on our own NotchWindow /
+        // StripPanel rely on the strip panel's own sendEvent path. We do
+        // NOT add a local monitor — it interferes with SwiftUI gesture
+        // recognition (drag, button taps) inside the dropdown.
+        notchClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let self else { return }
+            guard !self.isDropdownVisible else { return }
+            guard let cg = event.cgEvent else { return }
+            let sf = self.targetScreen.frame
+            let appKitPt = NSPoint(x: cg.location.x, y: sf.origin.y + sf.height - cg.location.y)
+            if self.activeStripRect.contains(appKitPt) {
+                DispatchQueue.main.async {
+                    self.haptic()
+                    self.toggleDropdown()
+                }
+            }
+        }
     }
 
     override func close() {
@@ -376,6 +433,7 @@ final class NotchWindow: NSPanel {
         if let m = externalClickMonitor { NSEvent.removeMonitor(m); externalClickMonitor = nil }
         if let m = externalHoverMonitor { NSEvent.removeMonitor(m); externalHoverMonitor = nil }
         if let m = outsideClickMonitor  { NSEvent.removeMonitor(m); outsideClickMonitor  = nil }
+        if let m = notchClickMonitor    { NSEvent.removeMonitor(m); notchClickMonitor    = nil }
         if let o = collapseObserver     { NotificationCenter.default.removeObserver(o); collapseObserver = nil }
         hoverLeaveTimer?.invalidate()
         hoverLeaveTimer = nil
@@ -425,10 +483,15 @@ final class NotchWindow: NSPanel {
         let geo = notchGeometry(screen: targetScreen)
         let base = stripRect
 
-        let hovered = ProviderRegistry.shared.isExternalHovered
-        let visibleProviders: [LLMProvider] = hovered || isDropdownVisible
-            ? ProviderRegistry.shared.connectedProviders.filter { ProviderRegistry.shared.usageMap[$0] != nil }
-            : ProviderRegistry.shared.activeProviders
+        // Size to the FULL expanded wing width regardless of hover state.
+        // Resizing the strip on hoverEnter/hoverExit creates a feedback loop:
+        // resize → cursor falls outside the new tracking area → exit fires →
+        // resize back → cursor is inside again → enter fires → forever.
+        // Using connectedProviders (the fully-expanded shape) keeps the strip
+        // stable so AppKit's tracking area only fires once per real entry/exit.
+        // Bonus: the click hit zone now spans the full wing, not just center.
+        let visibleProviders = ProviderRegistry.shared.connectedProviders
+            .filter { ProviderRegistry.shared.usageMap[$0] != nil }
 
         let leftCount = visibleProviders.filter { $0.notchWing == .left }.count
         let rightCount = visibleProviders.filter { $0.notchWing == .right }.count
@@ -471,13 +534,48 @@ final class NotchWindow: NSPanel {
         if strip.frame != newRect {
             strip.setFrame(newRect, display: true)
         }
-        // Limit click area to actual pill content (exclude padding used for hover)
-        if let sv = strip.contentView as? StripView {
+        guard let sv = strip.contentView as? StripView else { return }
+
+        // The panel itself is sized to the full wing extent for stability
+        // (resizing on hover triggers tracking-area rebuild loops). But we
+        // narrow the actual clickable hit zone to match what's visually drawn,
+        // so clicks landing in the empty wing zone fall through to apps below
+        // instead of being absorbed by an invisible rectangle.
+        if mode.isExternal || isDropdownVisible {
             let pad: CGFloat = isDropdownVisible ? 0 : 6
             sv.clickableRect = pad > 0
                 ? NSRect(x: pad, y: 0, width: newRect.width - pad * 2, height: newRect.height)
                 : nil
+            return
         }
+
+        // Hardware-notched, dropdown closed: clickable rect mirrors the
+        // visible content. Always at least the notch zone; expanded to wing
+        // extents only when hovered.
+        let visibleWidth = visibleContentWidth
+        let leftMargin = max(0, (newRect.width - visibleWidth) / 2)
+        sv.clickableRect = NSRect(
+            x: leftMargin,
+            y: 0,
+            width: visibleWidth,
+            height: newRect.height
+        )
+    }
+
+    /// Width of the actually-drawn pill content within the strip, in the
+    /// strip's local coordinate space. Notch-zone-only when idle; expands
+    /// to include wings when hovered.
+    private var visibleContentWidth: CGFloat {
+        let geo = notchGeometry(screen: targetScreen)
+        let hovered = ProviderRegistry.shared.isExternalHovered
+        guard hovered else { return geo.notchWidth }
+        let visibleProviders = ProviderRegistry.shared.connectedProviders
+            .filter { ProviderRegistry.shared.usageMap[$0] != nil }
+        let leftCount = visibleProviders.filter { $0.notchWing == .left }.count
+        let rightCount = visibleProviders.filter { $0.notchWing == .right }.count
+        let leftW = renderedWingWidth(count: leftCount)
+        let rightW = renderedWingWidth(count: rightCount)
+        return max(geo.notchWidth, leftW + geo.notchWidth + rightW)
     }
 
     private var interactiveContentRectInView: NSRect? {
@@ -541,16 +639,18 @@ final class NotchWindow: NSPanel {
     // MARK: - Dropdown (now expands in-place inside NotchWindow)
 
     func toggleDropdown() {
-        #if DEBUG
-        print("[NotchWindow] toggleDropdown: isDropdownVisible=\(isDropdownVisible)")
-        #endif
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastToggleTime < 0.2 {
+            NSLog("[TN.diag] toggleDropdown DEBOUNCED (Δ=\(now - lastToggleTime)s)")
+            return
+        }
+        lastToggleTime = now
+        NSLog("[TN.diag] toggleDropdown isDropdownVisible=\(isDropdownVisible)")
         isDropdownVisible ? closeDropdown() : openDropdown()
     }
 
     private func openDropdown() {
-        #if DEBUG
-        print("[NotchWindow] openDropdown called, frame=\(frame)")
-        #endif
+        NSLog("[TN.diag] openDropdown frame=\(frame) ignoresMouseEvents=\(ignoresMouseEvents) stripIME=\(stripPanel?.ignoresMouseEvents ?? true)")
         collapseFinalizeWork?.cancel()
         collapseFinalizeWork = nil
         isDropdownVisible = true
@@ -560,9 +660,15 @@ final class NotchWindow: NSPanel {
         stripPanel?.ignoresMouseEvents = true
         updateStripFrame()
         makeKeyAndOrderFront(nil)
+        NSLog("[TN.diag] openDropdown post-makeKey isVisible=\(isVisible) alpha=\(alphaValue) level=\(level.rawValue) frame=\(frame)")
 
         // Tell SwiftUI view to expand
         NotificationCenter.default.post(name: .notchExpandDropdown, object: nil)
+        // Read state again 0.5s later to see if dropdown is still visible
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self else { return }
+            NSLog("[TN.diag] openDropdown +0.5s isVisible=\(self.isVisible) alpha=\(self.alphaValue) frame=\(self.frame)")
+        }
 
         // Cancel any lingering outside-click monitor before installing a new one
         if let m = outsideClickMonitor { NSEvent.removeMonitor(m); outsideClickMonitor = nil }
