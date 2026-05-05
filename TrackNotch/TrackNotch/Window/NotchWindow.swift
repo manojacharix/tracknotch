@@ -687,11 +687,19 @@ final class NotchWindow: NSPanel {
         // The shrink to fit-the-visible-dropdown happens AFTER the
         // SwiftUI open animation settles (see scheduled work below).
 
-        // Allow hit-testing and make key so SwiftUI buttons fire correctly
+        // Allow hit-testing. On external monitors use orderFrontRegardless
+        // instead of makeKeyAndOrderFront — the panel is non-activating and
+        // makeKeyAndOrderFront causes it to briefly become key then immediately
+        // lose key back to the previous app, firing resignKey() → closeDropdown()
+        // → notchCollapseDropdown loop on notchless Macs.
         ignoresMouseEvents = false
         stripPanel?.ignoresMouseEvents = true
         updateStripFrame()
-        makeKeyAndOrderFront(nil)
+        if mode.isExternal {
+            orderFrontRegardless()
+        } else {
+            makeKeyAndOrderFront(nil)
+        }
         NSLog("[TN.diag] openDropdown post-makeKey isVisible=\(isVisible) alpha=\(alphaValue) level=\(level.rawValue) frame=\(frame)")
 
         // Tell SwiftUI view to expand
@@ -822,6 +830,10 @@ final class NotchWindow: NSPanel {
 
     override func resignKey() {
         super.resignKey()
+        // External monitor panels never become key (orderFrontRegardless), so
+        // resignKey is spurious — skip to avoid the openDropdown→resignKey→
+        // closeDropdown loop on notchless Macs.
+        guard !mode.isExternal else { return }
         // If we lost key while the dropdown was visible, another window grabbed
         // focus (e.g. the Settings dialog opened via the menu bar). Force-close
         // the dropdown so our state flags reset and the new key window can
