@@ -218,34 +218,6 @@ struct ExternalMonitorView: View {
                 )
                 .frame(width: isExpanded ? extExpandedWidth : pillWidth,
                        height: shapeHeight, alignment: .top)
-                // True blur shadow: duplicate shape rendered behind + gaussian blur.
-                // .shadow() only controls opacity not blur quality; this gives a
-                // soft diffuse glow that actually looks blurred.
-                .background(
-                    Group {
-                        if pillPhase >= 2 {
-                            NotchShape(
-                                topCornerRadius: isExpanded ? extExpandedTopRadius : 6,
-                                bottomCornerRadius: isExpanded ? extExpandedBottomRadius : pillCornerRadius
-                            )
-                            .fill(Color.black.opacity(0.55))
-                            .blur(radius: isExpanded ? 22 : 12)
-                            .offset(y: isExpanded ? 10 : 4)
-                        } else {
-                            RoundedRectangle(cornerRadius: pillRadius)
-                                .fill(Color.black.opacity(0.3))
-                                .blur(radius: 6)
-                                .offset(y: 2)
-                        }
-                    }
-                    .animation(
-                        isExpanded
-                            ? .interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)
-                            : .easeIn(duration: 0.28),
-                        value: isExpanded
-                    )
-                    .allowsHitTesting(false)
-                )
                 .animation(
                     isExpanded
                         ? .interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)
