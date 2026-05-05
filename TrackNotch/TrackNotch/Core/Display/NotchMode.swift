@@ -1,34 +1,22 @@
 import AppKit
 
 /// Determines which rendering mode to use for a given screen.
+/// Two variants only:
+///   - hardwareNotch  — display with a physical notch (uses notch-hugging wings UI)
+///   - external       — everything else: external monitors, notchless built-ins,
+///                      and clamshell mode (uses floating dot/pill UI)
 enum NotchMode {
     case hardwareNotch
-    case softwareNotch
-    case externalMonitor   // no notch — dot that expands into icons
+    case external
 
     static func detect(for screen: NSScreen) -> NotchMode {
-        // Built-in display with physical notch
-        if let left = screen.auxiliaryTopLeftArea, left.width > 0 {
-            return .hardwareNotch
-        }
-        if screen.safeAreaInsets.top > 0 {
-            return .hardwareNotch
-        }
-        // External monitor: no menu-bar inset, not the built-in Retina panel.
-        // NSScreen.localizedName contains "Built-in" or the product name on Apple Silicon.
-        let builtIn = screen.localizedName.localizedCaseInsensitiveContains("built-in")
-                   || screen.localizedName.localizedCaseInsensitiveContains("retina")
-                   || screen.localizedName.localizedCaseInsensitiveContains("liquid")
-        if !builtIn {
-            return .externalMonitor
-        }
-        return .softwareNotch
+        if let left = screen.auxiliaryTopLeftArea, left.width > 0 { return .hardwareNotch }
+        if screen.safeAreaInsets.top > 0 { return .hardwareNotch }
+        return .external
     }
 
     var isHardware: Bool { self == .hardwareNotch }
-    /// True for any display that has no physical notch — both external monitors
-    /// and notchless built-in displays use the floating dot/pill UI.
-    var isExternal: Bool { self == .externalMonitor || self == .softwareNotch }
+    var isExternal: Bool { self == .external }
 }
 
 // MARK: - Sizing helpers (mirrors agentnotch NotchSizing)

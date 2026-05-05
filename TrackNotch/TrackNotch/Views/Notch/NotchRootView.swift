@@ -645,9 +645,20 @@ struct NotchRootView: View {
                        bottomCornerRadius: isExpanded ? expandedBottomRadius : 14)
                 .fill(Color.black)
                 .frame(width: pillWidth, height: notchShapeHeight)
-                .shadow(color: .black.opacity(isExpanded ? 0.25 : 0.5),
-                        radius: isExpanded ? 12 : 8,
-                        y: isExpanded ? 4 : 0)
+                .background(
+                    NotchShape(topCornerRadius: isExpanded ? expandedTopRadius : 6,
+                               bottomCornerRadius: isExpanded ? expandedBottomRadius : 14)
+                        .fill(Color.black.opacity(0.5))
+                        .blur(radius: isExpanded ? 48 : 18)
+                        .offset(y: isExpanded ? 20 : 6)
+                        .animation(
+                            isExpanded
+                                ? .interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)
+                                : .easeIn(duration: 0.28),
+                            value: isExpanded
+                        )
+                        .allowsHitTesting(false)
+                )
                 .animation(
                     isExpanded
                         ? .interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)
@@ -685,48 +696,56 @@ struct NotchRootView: View {
             if isExpanded {
                 let wingRegionWidth = (pillWidth - geo.notchWidth) / 2
                 let notchGutter: CGFloat = 12
-                HStack(spacing: 0) {
-                    // Left wing region — edit button aligned to its
-                    // trailing edge (notch side).
-                    Button(isEditMode ? "done" : "edit") {
-                        isEditMode.toggle()
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(Color.white.opacity(0.12)))
-                    .contentShape(Capsule())
-                    .padding(.trailing, notchGutter + 6)
-                    .frame(width: wingRegionWidth, height: pillHeight, alignment: .trailing)
-
-                    // Physical notch gap — tap to close dropdown.
+                ZStack {
+                    // Full-width tap zone — always hit-testable when expanded
+                    // (not gated on contentVisible opacity so it works even
+                    // while the content is fading in/out).
                     Color.white.opacity(0.001)
-                        .frame(width: geo.notchWidth, height: pillHeight)
+                        .frame(width: pillWidth, height: pillHeight)
                         .contentShape(Rectangle())
                         .onTapGesture { onToggleDropdown() }
 
-                    // Right wing region — settings button aligned to its
-                    // leading edge (notch side).
-                    Button("settings") {
-                        // Don't toggle the dropdown here — opening the
-                        // dialog makes it key, NotchWindow.resignKey()
-                        // handles the collapse via closeDropdown().
-                        ConnectionWindowController.shared.open()
+                    HStack(spacing: 0) {
+                        // Left wing region — edit button aligned to its
+                        // trailing edge (notch side).
+                        Button(isEditMode ? "done" : "edit") {
+                            isEditMode.toggle()
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.white.opacity(0.12)))
+                        .contentShape(Capsule())
+                        .padding(.trailing, notchGutter + 6)
+                        .frame(width: wingRegionWidth, height: pillHeight, alignment: .trailing)
+
+                        // Physical notch block spacer
+                        Color.clear
+                            .frame(width: geo.notchWidth, height: pillHeight)
+
+                        // Right wing region — settings button aligned to its
+                        // leading edge (notch side).
+                        Button("settings") {
+                            // Don't toggle the dropdown here — opening the
+                            // dialog makes it key, NotchWindow.resignKey()
+                            // handles the collapse via closeDropdown().
+                            ConnectionWindowController.shared.open()
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.white.opacity(0.12)))
+                        .contentShape(Capsule())
+                        .padding(.leading, notchGutter)
+                        .frame(width: wingRegionWidth, height: pillHeight, alignment: .leading)
                     }
-                    .buttonStyle(.borderless)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(Color.white.opacity(0.12)))
-                    .contentShape(Capsule())
-                    .padding(.leading, notchGutter)
-                    .frame(width: wingRegionWidth, height: pillHeight, alignment: .leading)
+                    .opacity(contentVisible ? 1 : 0)
                 }
                 .frame(width: pillWidth, height: pillHeight)
-                .opacity(contentVisible ? 1 : 0)
             }
 
             // Expanded dropdown content — sits below the notch bar inside the shape

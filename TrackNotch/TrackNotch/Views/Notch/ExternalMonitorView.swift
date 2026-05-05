@@ -72,6 +72,9 @@ struct ExternalMonitorView: View {
     @State private var isEditMode: Bool = false
     @State private var expandedContentHeight: CGFloat = 200
     @State private var transitionNonce: Int = 0
+    /// Reentry guard: prevents openExpanded/closeExpanded from stomping each other
+    /// during async animation sequences. True while an expand or collapse is in flight.
+    @State private var dropdownTransitioning: Bool = false
 
     private var isHovered: Bool { registry.isExternalHovered }
 
@@ -127,37 +130,18 @@ struct ExternalMonitorView: View {
     var body: some View {
         ZStack(alignment: .top) {
             Color.clear
-                .frame(width: trackNotchWindowWidth, height: trackNotchWindowHeight)
+                .frame(
+                    width: frameReporter.panelFitsVisibleShape ? extExpandedWidth : trackNotchWindowWidth,
+                    height: frameReporter.panelFitsVisibleShape ? shapeHeight : trackNotchWindowHeight
+                )
                 .allowsHitTesting(false)
 
             if pillInTree {
                 ZStack(alignment: .top) {
-                    // Layer 1: The pill shape
-                    if isExpanded {
-                        NotchShape(
-                            topCornerRadius: extExpandedTopRadius,
-                            bottomCornerRadius: extExpandedBottomRadius
-                        )
-                        .fill(Color.black)
-                        .frame(width: pillWidth, height: shapeHeight)
-                        .shadow(color: .black.opacity(0.7), radius: 24, y: 10)
-                    } else if pillPhase >= 2 {
-                        // Fully-expanded pill: use NotchShape silhouette so the
-                        // notchless pill visually mimics wings (flat top, inward
-                        // top corners, outward bottom corners).
-                        NotchShape(topCornerRadius: 6, bottomCornerRadius: pillCornerRadius)
-                            .fill(Color.black)
-                            .frame(width: pillWidth, height: pillHeight)
-                            .shadow(color: .black.opacity(0.4), radius: 6, y: 0)
-                    } else {
-                        // Dot / circle morph phases stay round.
-                        RoundedRectangle(cornerRadius: pillRadius)
-                            .fill(Color.black)
-                            .frame(width: pillWidth, height: pillHeight)
-                            .shadow(color: .black.opacity(0.2), radius: 2, y: 0)
-                    }
+                    // Black fill — clipped to shape so content can't overflow
+                    Color.black
 
-                    // Layer 2: Icons — only when pill is fully expanded (phase 2) and not in dropdown
+                    // Icons — visible when pill is fully open and not in dropdown
                     if pillPhase >= 2 && !isExpanded {
                         iconsView
                             .frame(width: targetPillWidth, height: extPillHeight)
@@ -180,15 +164,6 @@ struct ExternalMonitorView: View {
                             Spacer()
 
                             Button("settings") {
-                                // Don't post notchCollapseDropdown here.
-                                // ConnectionWindow.open() makes the dialog
-                                // key; NotchWindow.resignKey() then handles
-                                // the dropdown collapse via closeDropdown(),
-                                // which posts the notification once. Posting
-                                // it twice from here used to leave NotchWindow's
-                                // isDropdownVisible flag out of sync with the
-                                // SwiftUI isExpanded state, so subsequent pill
-                                // clicks were no-ops.
                                 ConnectionWindowController.shared.open()
                             }
                             .buttonStyle(.borderless)
@@ -202,12 +177,7 @@ struct ExternalMonitorView: View {
                         .padding(.horizontal, 28)
                         .padding(.top, 10)
                         .padding(.bottom, 4)
-                        .frame(width: pillWidth, height: extPillHeight)
-                        // No parent .onTapGesture here — it raced with the
-                        // child Buttons (Edit/Settings) and would sometimes
-                        // win the tap, posting collapse and swallowing the
-                        // button's action. Outside-the-pill clicks are
-                        // already handled by NotchWindow.outsideClickMonitor.
+                        .frame(width: extExpandedWidth, height: extPillHeight)
                         .opacity(contentVisible ? 1 : 0)
                     }
 
@@ -235,30 +205,88 @@ struct ExternalMonitorView: View {
                                     }
                                 )
                         }
-                        .frame(width: pillWidth)
-                        .clipped()
+                        .frame(width: extExpandedWidth)
                     }
                 }
-                .frame(width: isExpanded ? pillWidth : nil, height: shapeHeight, alignment: .top)
-                .opacity(pillOpacity)
+                // Clip all content to the shape — keeps corners clean
+                .clipShape(
+                    pillPhase >= 2
+                        ? AnyShape(NotchShape(
+                            topCornerRadius: isExpanded ? extExpandedTopRadius : 6,
+                            bottomCornerRadius: isExpanded ? extExpandedBottomRadius : pillCornerRadius))
+                        : AnyShape(RoundedRectangle(cornerRadius: pillRadius))
+                )
+                .frame(width: isExpanded ? extExpandedWidth : pillWidth,
+                       height: shapeHeight, alignment: .top)
+                // True blur shadow: duplicate shape rendered behind + gaussian blur.
+                // .shadow() only controls opacity not blur quality; this gives a
+                // soft diffuse glow that actually looks blurred.
+                .background(
+                    Group {
+                        if pillPhase >= 2 {
+                            NotchShape(
+                                topCornerRadius: isExpanded ? extExpandedTopRadius : 6,
+                                bottomCornerRadius: isExpanded ? extExpandedBottomRadius : pillCornerRadius
+                            )
+                            .fill(Color.black.opacity(0.55))
+                            .blur(radius: isExpanded ? 22 : 12)
+                            .offset(y: isExpanded ? 10 : 4)
+                        } else {
+                            RoundedRectangle(cornerRadius: pillRadius)
+                                .fill(Color.black.opacity(0.3))
+                                .blur(radius: 6)
+                                .offset(y: 2)
+                        }
+                    }
+                    .animation(
+                        isExpanded
+                            ? .interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)
+                            : .easeIn(duration: 0.28),
+                        value: isExpanded
+                    )
+                    .allowsHitTesting(false)
+                )
+                .animation(
+                    isExpanded
+                        ? .interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)
+                        : .easeIn(duration: 0.28),
+                    value: isExpanded
+                )
+                .animation(
+                    isExpanded
+                        ? .interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)
+                        : .easeIn(duration: 0.28),
+                    value: shapeHeight
+                )
                 .animation(.easeInOut(duration: 0.25), value: pillWidth)
                 .animation(.easeInOut(duration: 0.25), value: pillHeight)
                 .animation(.easeInOut(duration: 0.2), value: pillRadius)
                 .animation(.easeInOut(duration: 0.2), value: pillOpacity)
-                .animation(.smooth(duration: 0.35), value: isExpanded)
-                .animation(.smooth(duration: 0.35), value: shapeHeight)
+                .opacity(pillOpacity)
                 .allowsHitTesting(isExpanded)
                 .frame(maxWidth: .infinity, alignment: .center)
-                // Pill sits ON the menu bar (overlapping it). Stays
-                // horizontally centred so it doesn't collide with system
-                // status icons on the right or app menus on the left.
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchExpandDropdown)) { _ in
             openExpanded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchCollapseDropdown)) { _ in
-            closeExpanded()
+            // Force-close even if transitioning — NotchWindow has already reset its
+            // isDropdownVisible flag and must stay in sync with SwiftUI isExpanded.
+            // Bump nonce first so any in-flight open work item aborts, then clear
+            // the transitioning guard so closeExpanded() is not blocked.
+            if dropdownTransitioning {
+                beginTransition()   // cancels pending open work items via nonce check
+                dropdownTransitioning = false
+            }
+            // If still in mid-open (isExpanded=false), just reset state directly.
+            if !isExpanded {
+                contentVisible = false
+                pillPhase = hasIcons ? 2 : 0
+                if !hasIcons { pillInTree = false }
+            } else {
+                closeExpanded()
+            }
         }
         .onChange(of: isHovered) { hovered in
             guard !isExpanded else { return }
@@ -287,6 +315,7 @@ struct ExternalMonitorView: View {
     // MARK: - Hover In: dot → circle → pill → icons spread from center
 
     private func hoverIn() {
+        guard !dropdownTransitioning else { return }
         cancelCollapse()
         cancelPendingTransitionWork()
         let nonce = beginTransition()
@@ -326,6 +355,10 @@ struct ExternalMonitorView: View {
     // MARK: - Hover Out: icons retract → pill → circle → dot → fade
 
     private func hoverOut() {
+        // While dropdown is opening or closing, hover-out must not touch the
+        // transition nonce — doing so would invalidate the pending work items
+        // and leave the dropdown half-open with ignoresMouseEvents=true stuck on.
+        guard !dropdownTransitioning else { return }
         cancelCollapse()
         cancelPendingTransitionWork()
         let nonce = beginTransition()
@@ -378,6 +411,7 @@ struct ExternalMonitorView: View {
     // MARK: - Activity-driven show (no hover, provider becomes active)
 
     private func showWithActivity() {
+        guard !dropdownTransitioning else { return }
         cancelCollapse()
         cancelPendingTransitionWork()
         let nonce = beginTransition()
@@ -409,6 +443,7 @@ struct ExternalMonitorView: View {
     // MARK: - Activity-driven hide (no hover, provider goes idle)
 
     private func activityOut() {
+        guard !dropdownTransitioning else { return }
         cancelPendingTransitionWork()
         let nonce = beginTransition()
 
@@ -470,66 +505,77 @@ struct ExternalMonitorView: View {
     // MARK: - Expand / Collapse dropdown
 
     private func openExpanded() {
-        #if DEBUG
-        print("[ExternalMonitorView] openExpanded: isExpanded=\(isExpanded), contentVisible=\(contentVisible)")
-        #endif
         // No providers connected — open settings directly instead of empty dropdown
         if registry.connectedProviders.isEmpty {
             ConnectionWindowController.shared.open()
             return
         }
+        // Already expanded or mid-open — nothing to do
+        guard !isExpanded && !dropdownTransitioning else { return }
+
+        dropdownTransitioning = true
         cancelCollapse()
         cancelPendingTransitionWork()
         let nonce = beginTransition()
         closeWork?.cancel()
         closeWork = nil
 
-        // Force-reset: interrupt any in-progress close animation
-        contentVisible = false
-        isExpanded = false
-
         // Ensure pill is in tree and fully expanded before opening dropdown.
+        // Do NOT reset isExpanded=false here — that creates a window where
+        // closeExpanded's guard (guard isExpanded else { return }) passes,
+        // and any queued collapse notification triggers a spurious close
+        // before the 50ms open fires, causing the open→close loop.
+        contentVisible = false
         pillInTree = true
         pillOpacity = 1.0
         pillPhase = 2
         iconsSpread = false
 
-        // Give SwiftUI one render pass to create the pill view, then expand
+        // Small delay so SwiftUI commits the pill-state reset before the spring fires.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            guard transitionNonce == nonce else { return }
-            withAnimation(.smooth(duration: 0.4)) {
+            guard self.transitionNonce == nonce else {
+                self.dropdownTransitioning = false
+                return
+            }
+            withAnimation(.interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)) {
                 self.isExpanded = true
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                guard transitionNonce == nonce else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                guard self.transitionNonce == nonce else { return }
                 withAnimation(.easeOut(duration: 0.2)) { self.contentVisible = true }
+                self.dropdownTransitioning = false
             }
         }
     }
 
     private func closeExpanded() {
-        #if DEBUG
-        print("[ExternalMonitorView] closeExpanded: isExpanded=\(isExpanded)")
-        #endif
-        guard isExpanded else { return }
+        guard isExpanded && !dropdownTransitioning else { return }
+
+        dropdownTransitioning = true
         isEditMode = false
         cancelPendingTransitionWork()
         let nonce = beginTransition()
         closeWork?.cancel()
 
-        withAnimation(.easeIn(duration: 0.15)) { contentVisible = false }
+        withAnimation(.easeInOut(duration: 0.18)) { contentVisible = false }
 
         let work = DispatchWorkItem {
-            guard transitionNonce == nonce else { return }
-            withAnimation(.smooth(duration: 0.35)) { self.isExpanded = false }
-            // After dropdown closes, restore pill to hover/active state
+            guard self.transitionNonce == nonce else {
+                self.dropdownTransitioning = false
+                return
+            }
+            withAnimation(.easeIn(duration: 0.28)) { self.isExpanded = false }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                guard transitionNonce == nonce else { return }
-                if self.isHovered {
-                    // Re-trigger full hover-in so hover animations work correctly
-                    self.hoverIn()
-                } else if self.hasIcons {
+                guard self.transitionNonce == nonce else {
+                    self.dropdownTransitioning = false
+                    return
+                }
+                self.dropdownTransitioning = false
+                // Restore pill to correct post-close state without calling hoverIn()
+                // (hoverIn re-triggers onChange chains that can loop).
+                if self.hasIcons || self.isHovered {
                     self.pillPhase = 2
+                    self.iconsSpread = false
                     withAnimation(.easeOut(duration: 0.22)) {
                         self.iconsSpread = true
                     }
@@ -539,7 +585,7 @@ struct ExternalMonitorView: View {
             }
         }
         closeWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16, execute: work)
     }
 
     // MARK: - Icons layout (center-outward spread)

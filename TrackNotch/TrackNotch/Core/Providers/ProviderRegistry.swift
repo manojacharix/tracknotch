@@ -61,10 +61,27 @@ final class ProviderRegistry: ObservableObject {
         cx.start()
         if cx.isInstalled {
             markAutoConnected(.codex)
-            updateUsage(cx.toProviderUsage())
-            cx.objectWillChange.sink { [weak self] _ in
-                Task { @MainActor in self?.updateUsage(cx.toProviderUsage()) }
-            }.store(in: &cancellables)
+            // If auth.json exists, use API-based rate-limit fetcher for real % data.
+            // Otherwise fall back to the local SQLite thread-count estimate.
+            let authPath = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".codex/auth.json").path
+            if FileManager.default.fileExists(atPath: authPath) {
+                let cxf = CodexUsageFetcher.shared
+                cxf.start()
+                updateUsage(cxf.toProviderUsage())
+                cxf.objectWillChange.sink { [weak self] _ in
+                    Task { @MainActor in self?.updateUsage(cxf.toProviderUsage()) }
+                }.store(in: &cancellables)
+                // Also subscribe to monitor for activity / token count updates
+                cx.objectWillChange.sink { [weak self] _ in
+                    Task { @MainActor in self?.updateUsage(cxf.toProviderUsage()) }
+                }.store(in: &cancellables)
+            } else {
+                updateUsage(cx.toProviderUsage())
+                cx.objectWillChange.sink { [weak self] _ in
+                    Task { @MainActor in self?.updateUsage(cx.toProviderUsage()) }
+                }.store(in: &cancellables)
+            }
         } else {
             evictStaleConnection(.codex)
         }

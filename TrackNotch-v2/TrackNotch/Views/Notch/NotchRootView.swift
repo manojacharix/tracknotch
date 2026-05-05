@@ -753,25 +753,6 @@ struct NotchRootView: View {
             }
         }
         .frame(width: pillWidth, height: notchShapeHeight, alignment: .top)
-        // Shadow rendered as .background() on the framed ZStack so the blur
-        // spreads into the parent coordinate space, outside the frame clip.
-        // Placing it inside the ZStack (as a child) clips blur to frame bounds
-        // and produces a hard edge — .background() avoids that entirely.
-        .background(
-            NotchShape(topCornerRadius: isExpanded ? expandedTopRadius : 6,
-                       bottomCornerRadius: isExpanded ? expandedBottomRadius : 14)
-                .fill(Color.black.opacity(0.5))
-                .blur(radius: isExpanded ? 40 : 16)
-                .offset(y: isExpanded ? 16 : 4)
-                .animation(
-                    isExpanded
-                        ? .interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)
-                        : .easeIn(duration: 0.28),
-                    value: isExpanded
-                )
-                .allowsHitTesting(false),
-            alignment: .top
-        )
         .offset(x: pillLeadingOffset)
         // Pass all events through to StripPanel when collapsed; interactive when expanded
         .allowsHitTesting(isExpanded)

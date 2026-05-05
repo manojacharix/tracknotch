@@ -340,6 +340,10 @@ final class NotchWindow: NSPanel {
     }
 
     private func updateHoverState(inside: Bool) {
+        // While dropdown is open, don't clear hover state — tracking-area rebuilds
+        // from frame changes fire spurious mouseExited events that would collapse
+        // the pill animation underneath the open dropdown.
+        guard !isDropdownVisible else { return }
         hoverLeaveTimer?.invalidate()
         hoverLeaveTimer = nil
         if inside {
@@ -580,7 +584,10 @@ final class NotchWindow: NSPanel {
         // shape is clearly pill-like to the user.
         let extPillHeight: CGFloat = 32
         let sideInset: CGFloat = 4
-        let pillW: CGFloat = expandedWindowWidth - sideInset * 2
+        let dropdownW: CGFloat = mode.isExternal
+            ? min(380, targetScreen.frame.width - 40)
+            : expandedWindowWidth
+        let pillW: CGFloat = dropdownW - sideInset * 2
 
         // GeometryReader fires once the dropdown SwiftUI view appears (~0.05s
         // after openDropdown). Use a tight floor (≈ default expandedContentHeight)
@@ -656,20 +663,22 @@ final class NotchWindow: NSPanel {
             .debounce(for: .milliseconds(80), scheduler: RunLoop.main)
             .sink { [weak self] h in
                 guard let self, self.isDropdownVisible, h > 0 else { return }
-                let pillH = notchGeometry(screen: self.targetScreen).notchHeight
+                let pillH: CGFloat = self.mode.isExternal
+                    ? 32
+                    : notchGeometry(screen: self.targetScreen).notchHeight
+                let dropW: CGFloat = self.mode.isExternal
+                    ? min(380, self.targetScreen.frame.width - 40)
+                    : self.expandedWindowWidth
                 let totalH = pillH + h
                 let collapsed = self.collapsedFrame
                 let cx = collapsed.midX
                 let newFrame = NSRect(
-                    x: cx - self.expandedWindowWidth / 2,
+                    x: cx - dropW / 2,
                     y: collapsed.maxY - totalH,
-                    width: self.expandedWindowWidth,
+                    width: dropW,
                     height: totalH
                 )
                 if !NSEqualRects(self.frame, newFrame) {
-                    // animate:false so the panel snaps to size without
-                    // AppKit's default frame animation (which the user
-                    // perceives as the dropdown "resizing weirdly").
                     self.setFrame(newFrame, display: true, animate: false)
                 }
             }
@@ -712,25 +721,25 @@ final class NotchWindow: NSPanel {
         // zone collapses so clicks outside the shape pass through.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
             guard let self, self.isDropdownVisible else { return }
-            let pillH = notchGeometry(screen: self.targetScreen).notchHeight
+            let pillH: CGFloat = self.mode.isExternal
+                ? 32   // extPillHeight — external pill is always 32pt tall
+                : notchGeometry(screen: self.targetScreen).notchHeight
+            let dropW: CGFloat = self.mode.isExternal
+                ? min(380, self.targetScreen.frame.width - 40)
+                : self.expandedWindowWidth
             let measured = self.frameReporter.dropdownContentHeight
             let contentH: CGFloat = measured > 0 ? measured : 200
             let totalH = pillH + contentH
             let collapsed = self.collapsedFrame
             let cx = collapsed.midX
             let newFrame = NSRect(
-                x: cx - self.expandedWindowWidth / 2,
+                x: cx - dropW / 2,
                 y: collapsed.maxY - totalH,
-                width: self.expandedWindowWidth,
+                width: dropW,
                 height: totalH
             )
             self.setFrame(newFrame, display: true, animate: false)
-            // Tell SwiftUI to switch its canvas math to the 420 layout
-            // (no horizontal offset) — keeps the visible pill position
-            // invariant across the snap.
             self.frameReporter.panelFitsVisibleShape = true
-            // Now that SwiftUI is settled, observe content-height
-            // changes so subsequent grid additions/removals re-tighten.
             self.observeDropdownContentHeight()
         }
 
@@ -739,12 +748,13 @@ final class NotchWindow: NSPanel {
 
         // Install outside-click monitor after a short delay to avoid catching the
         // triggering mouseDown or any buffered prior clicks in the event queue.
-        let installTime = Date()
+        // Use systemUptime — event.timestamp is also uptime-based, so the clocks match.
+        let installTime = ProcessInfo.processInfo.systemUptime
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self, self.isDropdownVisible else { return }
             self.outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
                 guard let self else { return }
-                guard event.timestamp > installTime.timeIntervalSinceReferenceDate else { return }
+                guard event.timestamp > installTime else { return }
                 guard let cg = event.cgEvent else { return }
                 // Use targetScreen for correct coordinate translation
                 let sf = self.targetScreen.frame

@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0456BBCF33A87C9BBDD2440A /* ArrowTickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39B8567D8CA8B1BC2120FF2 /* ArrowTickerView.swift */; };
 		04CC6DD0C379B18680622E17 /* OpenAIUsageFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501987241AF4B13BD9548CD5 /* OpenAIUsageFetcher.swift */; };
+		A1B2C3D4E5F60001 /* CodexUsageFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60002 /* CodexUsageFetcher.swift */; };
 		062B7F92613C3D752155D204 /* AntigravityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7495886DA6789ADCFB619BA5 /* AntigravityMonitor.swift */; };
 		0B3BE6F7AB8A744E42C05CEA /* ProviderModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1887D39548E5BA6421CCDE /* ProviderModels.swift */; };
 		1C57FE4BBC7ECAD7F6316532 /* NotchWindowGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F039CEB87EA876288574015 /* NotchWindowGeometryTests.swift */; };
@@ -77,6 +78,7 @@
 		3E5CAD933E95E643D7B3C986 /* ProviderRegistryLingerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRegistryLingerTests.swift; sourceTree = "<group>"; };
 		4757D468E8CF3A2038BAE643 /* cursor-mono.svg */ = {isa = PBXFileReference; path = "cursor-mono.svg"; sourceTree = "<group>"; };
 		501987241AF4B13BD9548CD5 /* OpenAIUsageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIUsageFetcher.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60002 /* CodexUsageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexUsageFetcher.swift; sourceTree = "<group>"; };
 		5019DA62456EB47F6DA0F562 /* ProviderModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderModelsTests.swift; sourceTree = "<group>"; };
 		509550AE33EF92CFBCF1CC24 /* StatusMenuController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusMenuController.swift; sourceTree = "<group>"; };
 		532498744932436CCDCC4427 /* ClaudeRateLimitFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeRateLimitFetcher.swift; sourceTree = "<group>"; };
@@ -255,6 +257,7 @@
 				309F462F2671EBD28C2AF1B3 /* AnthropicUsageFetcher.swift */,
 				532498744932436CCDCC4427 /* ClaudeRateLimitFetcher.swift */,
 				501987241AF4B13BD9548CD5 /* OpenAIUsageFetcher.swift */,
+				A1B2C3D4E5F60002 /* CodexUsageFetcher.swift */,
 				8EC83C0935570F2F9444BB62 /* ProviderRegistry.swift */,
 			);
 			path = Providers;
@@ -474,6 +477,7 @@
 				CE1327848777DF5F805B223E /* NotchShape.swift in Sources */,
 				60F71CA6A2E21ED3AABD8357 /* NotchWindow.swift in Sources */,
 				04CC6DD0C379B18680622E17 /* OpenAIUsageFetcher.swift in Sources */,
+				A1B2C3D4E5F60001 /* CodexUsageFetcher.swift in Sources */,
 				BD620936B326771D126630CA /* PillGeometry.swift in Sources */,
 				369ED1E392CCC9D70C9DABC1 /* ProviderAuthManager.swift in Sources */,
 				E029ACA7B811DD9076B7CB38 /* ProviderConnectionView.swift in Sources */,
