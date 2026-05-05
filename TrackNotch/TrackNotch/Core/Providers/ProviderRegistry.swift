@@ -186,9 +186,17 @@ final class ProviderRegistry: ObservableObject {
     @Published var stripEnterCount: Int = 0
 
     /// Providers actively consuming OR still within the 2s linger window after going idle.
+    ///
+    /// When an Anthropic API key is configured AND claudeCode is active, suppress claudeCode
+    /// from the active set. Claude Code CLI writes JSONL files even when billing via API key
+    /// — both monitors fire, but only the API icon should light up the pill in that case.
+    /// We use key presence (not isActivelyConsuming) because AnthropicUsageFetcher only polls
+    /// every 5 minutes, so its isActivelyConsuming is almost always false during active use.
     var activeProviders: [LLMProvider] {
-        orderedProviders.filter { provider in
+        let anthropicAPIConnected = connectionStates[.anthropicAPI]?.isConnected == true
+        return orderedProviders.filter { provider in
             guard let usage = usageMap[provider] else { return false }
+            if provider == .claudeCode && anthropicAPIConnected { return false }
             return usage.isActivelyConsuming || lingering.contains(provider)
         }
     }

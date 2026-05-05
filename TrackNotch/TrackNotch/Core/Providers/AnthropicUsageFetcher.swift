@@ -59,6 +59,9 @@ final class AnthropicUsageFetcher: ObservableObject {
         if apiKey.hasPrefix("sk-ant-admin") {
             await fetchViaAdminAPI(apiKey)
         } else {
+            // Regular keys can't fetch cost — mark before probe so the card
+            // shows "orgs only" immediately rather than flashing $0.00 first.
+            if lastFetchError != "orgs_only" { lastFetchError = "orgs_only" }
             await fetchViaProbe(apiKey)
         }
     }

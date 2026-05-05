@@ -364,7 +364,7 @@ private struct APIKeyRow: View {
     private var placeholder: String {
         switch provider {
         case .openAIAPI:    return "sk-admin-..."
-        case .anthropicAPI: return "sk-ant-api03-... or sk-ant-admin-..."
+        case .anthropicAPI: return "sk-ant-admin-..."
         default:            return "paste your admin API key"
         }
     }
@@ -372,7 +372,7 @@ private struct APIKeyRow: View {
     /// Provider-specific tooltip shown below the API key field.
     fileprivate var providerHelp: String? {
         switch provider {
-        case .anthropicAPI: return "Regular API keys work; Admin keys also surface org-wide cost."
+        case .anthropicAPI: return "Requires an Admin key (sk-ant-admin-…). Cost tracking is org-level only."
         default:            return nil
         }
     }
@@ -380,6 +380,10 @@ private struct APIKeyRow: View {
     private func save() {
         let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        if provider == .anthropicAPI && !trimmed.hasPrefix("sk-ant-admin") {
+            errorMessage = "Admin key required (sk-ant-admin-…). Regular API keys can't fetch cost."
+            return
+        }
         ProviderAuthManager.shared.saveAPIKey(trimmed, for: provider)
         ProviderRegistry.shared.updateConnectionState(.connected, for: provider)
         // Seed an empty usage entry so the dropdown pill renders immediately,

@@ -27,6 +27,11 @@ struct NotchRootView: View {
 
     @State private var iconsVisible: Bool = false
     @State private var pillExpanded: Bool = false
+    /// Wing provider counts frozen at expand() time so late-arriving usageMap
+    /// entries don't grow renderedProviders mid-animation and shift layout.
+    /// Cleared to nil on collapse so next expand gets a fresh snapshot.
+    @State private var frozenLeftCount:  Int? = nil
+    @State private var frozenRightCount: Int? = nil
 
     /// Per-icon slide state, keyed by provider. Parent owns this so the
     /// per-icon spring animation runs reliably from prop changes via
@@ -107,6 +112,10 @@ struct NotchRootView: View {
         return registry.activeProviders
     }
 
+    /// Set form of targetProviders — used as the `onChange` value so SwiftUI
+    /// can detect when providers are added or removed while the pill is live.
+    private var targetProviderSet: Set<LLMProvider> { Set(targetProviders) }
+
     /// Providers currently in the wing view tree. Union of `targetProviders`
     /// and any provider still tracked in `iconSlideState` — the latter
     /// includes icons mid-animation (sliding back into the notch). Without
@@ -131,8 +140,8 @@ struct NotchRootView: View {
         return CGFloat(count) * iconSize + CGFloat(count - 1) * iconGap + outerSidePadding + innerSidePadding
     }
 
-    private var leftWingWidth:  CGFloat { pillExpanded && !isExpanded ? wingWidth(count: leftProviders.count) : 0 }
-    private var rightWingWidth: CGFloat { pillExpanded && !isExpanded ? wingWidth(count: rightProviders.count) : 0 }
+    private var leftWingWidth:  CGFloat { pillExpanded && !isExpanded ? wingWidth(count: frozenLeftCount  ?? leftProviders.count)  : 0 }
+    private var rightWingWidth: CGFloat { pillExpanded && !isExpanded ? wingWidth(count: frozenRightCount ?? rightProviders.count) : 0 }
     private var pillHeight: CGFloat { geo?.notchHeight ?? 39 }
 
     private var pillWidth: CGFloat {
@@ -304,19 +313,38 @@ struct NotchRootView: View {
             hoverSettleWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + settleDelay, execute: work)
         }
-        // No explicit count-change handler. While the wing is out and the
-        // icon set changes (e.g. activeProviders ↔ connectedProviders),
-        // we let SwiftUI's natural ForEach diff handle it: providers
-        // appearing in the new set mount fresh (NotchSlideIcon's onAppear
-        // runs its slide-out animation, so the new icon visibly emerges
-        // from the notch edge); providers leaving the set are removed
-        // from the tree silently. The wing extent itself recomputes
-        // smoothly via the existing pillWidth animation. Critically, no
-        // global iconsVisible toggle runs — so existing icons that are
-        // still in the new set are NOT re-animated. This eliminates the
-        // "icons going inside the notch and coming out again" effect
-        // that happened when the master visibility flag flipped while
-        // the wing stayed visually open.
+        // When hover enters while the pill is already expanded (active provider
+        // was showing), targetProviders switches from activeProviders →
+        // connectedProviders. shouldShow doesn't change so expand() never fires.
+        // Slide out any connected providers not yet in iconSlideState.
+        .onChange(of: registry.isExternalHovered) { hovered in
+            guard hovered, pillExpanded, !isExpanded else { return }
+            let missing = targetProviders.filter { iconSlideState[$0] == nil }
+            NSLog("[TN.diag] hover entered while expanded — missing icons: \(missing.map(\.rawValue))")
+            guard !missing.isEmpty else { return }
+            for p in missing { iconSlideState[p] = false }
+            for (idx, p) in missing.enumerated() {
+                let delay = Double(idx) * staggerStep
+                let work = DispatchWorkItem { iconSlideState[p] = true }
+                iconStaggerWorkItems.append(work)
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            }
+        }
+        // When usageMap gains a new entry while pill is expanded (late data
+        // arrival at startup or after reconnect), slide out the newcomer.
+        .onChange(of: targetProviderSet) { _ in
+            guard pillExpanded, !isExpanded else { return }
+            let missing = targetProviders.filter { iconSlideState[$0] == nil }
+            guard !missing.isEmpty else { return }
+            NSLog("[TN.diag] targetProviderSet changed — missing icons: \(missing.map(\.rawValue))")
+            for p in missing { iconSlideState[p] = false }
+            for (idx, p) in missing.enumerated() {
+                let delay = Double(idx) * staggerStep
+                let work = DispatchWorkItem { iconSlideState[p] = true }
+                iconStaggerWorkItems.append(work)
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            }
+        }
     }
 
     private func expand() {
@@ -326,15 +354,18 @@ struct NotchRootView: View {
         let nonce = beginTransition()
         lastHoverExpandTimestamp = ProcessInfo.processInfo.systemUptime
 
-        // Initialize all icons to retracted (false). SwiftUI's
-        // .animation(value: isSlid) on each icon will spring out from
-        // hiddenOffset → 0 when the parent flips this to true below.
-        // Setting non-animated here so the initial state is established
-        // before the wing subtree mounts.
+        // Pre-register ALL connected providers at false so renderedProviders
+        // is already at full size before the pill animates out. Without this,
+        // hover-triggered icons arrive late, growing renderedProviders and
+        // shifting the wing width mid-animation. Active providers animate in
+        // immediately; connected-only providers stay hidden (false) until hover.
+        let connected = registry.connectedProviders.filter { registry.usageMap[$0] != nil }
+        for provider in connected { iconSlideState[provider] = false }
         let allLeft  = leftProviders
         let allRight = rightProviders
-        for provider in allLeft  { iconSlideState[provider] = false }
-        for provider in allRight { iconSlideState[provider] = false }
+        // Freeze wing counts so late usageMap arrivals don't animate pillWidth.
+        frozenLeftCount  = allLeft.count
+        frozenRightCount = allRight.count
 
         // Wing pill springs out.
         pillExpanded = false
@@ -423,12 +454,11 @@ struct NotchRootView: View {
             withAnimation(.interactiveSpring(response: 0.38, dampingFraction: 0.82, blendDuration: 0.1)) {
                 pillExpanded = false
             }
-            // Drop iconSlideState entries that aren't in the current
-            // targetProviders set — they were "in-flight" only and
-            // should now be released so renderedProviders no longer
-            // keeps them in the tree.
-            let target = Set(targetProviders)
-            iconSlideState = iconSlideState.filter { target.contains($0.key) }
+            // Drop iconSlideState entries and frozen counts — pill is now
+            // fully retracted, next expand gets a fresh snapshot.
+            iconSlideState = [:]
+            frozenLeftCount  = nil
+            frozenRightCount = nil
         }
         collapsePillWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + iconCollapseWindow, execute: work)

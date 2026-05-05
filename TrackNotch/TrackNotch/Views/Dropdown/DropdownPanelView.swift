@@ -43,6 +43,7 @@ struct DropdownContent: View {
     /// Cells the registry currently has data for, in the user-defined order.
     private var visibleCells: [DropdownCell] {
         cellOrder.compactMap { key in
+            guard registry.connectedProviders.contains(key.provider) else { return nil }
             guard let usage = registry.usageMap[key.provider] else { return nil }
             // Primary only renders if percentage is meaningful (always true).
             // Secondary renders only when secondaryPercentage exists and the
@@ -272,20 +273,29 @@ struct DropdownProviderPill: View {
                     // Left: stats text
                     VStack(alignment: .leading, spacing: 2) {
                         if isAPIToken {
-                            // API token: show cost as primary
-                            Text(costLabel)
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .foregroundColor(.white)
-                                .monospacedDigit()
-                            if let limit = usage.costLimitUSD, limit > 0 {
-                                Text("of $\(Int(limit))")
+                            // API token: show cost as primary, or note if org-only tracking
+                            if usage.fetchError == "orgs_only" {
+                                Text("—")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.45))
+                                Text("orgs only")
                                     .font(.system(size: 8, weight: .regular, design: .rounded))
-                                    .foregroundColor(.white.opacity(0.4))
-                                    .lineLimit(1)
+                                    .foregroundColor(.white.opacity(0.3))
                             } else {
-                                Text("this month")
-                                    .font(.system(size: 8, weight: .regular, design: .rounded))
-                                    .foregroundColor(.white.opacity(0.4))
+                                Text(costLabel)
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .monospacedDigit()
+                                if let limit = usage.costLimitUSD, limit > 0 {
+                                    Text("of $\(Int(limit))")
+                                        .font(.system(size: 8, weight: .regular, design: .rounded))
+                                        .foregroundColor(.white.opacity(0.4))
+                                        .lineLimit(1)
+                                } else {
+                                    Text("this month")
+                                        .font(.system(size: 8, weight: .regular, design: .rounded))
+                                        .foregroundColor(.white.opacity(0.4))
+                                }
                             }
                         } else {
                             // Subscription/local: percentage as primary
@@ -317,7 +327,7 @@ struct DropdownProviderPill: View {
                                 .scaledToFit()
                                 .foregroundColor(isAPIToken ? .white.opacity(0.5) : (displayPct > 0 ? .white : .white.opacity(0.4)))
                                 .frame(width: 15, height: 15)
-                            if usage.fetchError != nil {
+                            if let err = usage.fetchError, err != "orgs_only" {
                                 Circle()
                                     .fill(Color(hex: "fb4141"))
                                     .frame(width: 5, height: 5)

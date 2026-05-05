@@ -26,7 +26,7 @@ TrackNotch is a native macOS app that monitors your LLM usage across Claude, Ope
 | **Local-first** | Reads usage directly from providers' own files and APIs. Nothing leaves your machine. |
 | **Multi-provider** | Claude Code, OpenAI API, Cursor, Codex, Anthropic API, Google Gemini — all in one pill. |
 | **Context arc** | Visual arc shows how full your active Claude session's context window is, live. |
-| **Budget tracking** | Set monthly API budgets for OpenAI and Anthropic. See spend at a glance. |
+| **Budget tracking** | Set monthly budgets for OpenAI (admin key) and Anthropic (org admin key). See spend at a glance. |
 | **Rate-limit headers** | OAuth token support for real 5h/7d Claude rate-limit data from Anthropic's headers. |
 | **Notch-native** | Slides out of the notch with a springy open animation and clean ease-in close. |
 | **Menu bar fallback** | Works on non-notched Macs too — sits cleanly in the menu bar. |
@@ -37,11 +37,10 @@ TrackNotch is a native macOS app that monitors your LLM usage across Claude, Ope
 | Provider | Tracks |
 |---|---|
 | **Claude Code** | Session context usage, 5h/7d rate limits via OAuth |
-| **Anthropic API** | Monthly API spend |
-| **OpenAI API** | Monthly API spend |
+| **Anthropic API** | Monthly org-wide spend — requires an Admin key (`sk-ant-admin-…`). Individual API keys not supported. |
+| **OpenAI API** | Monthly API spend — requires an Admin key (`sk-admin-…`) |
 | **Cursor** | Subscription fast-request usage |
 | **Codex** | Session usage |
-| **Google Gemini** | API spend |
 
 ## Install
 
@@ -58,7 +57,7 @@ TrackNotch is a native macOS app that monitors your LLM usage across Claude, Ope
 
 1. Launch TrackNotch — the pill appears at the top of your screen.
 2. Click the pill → dropdown opens → **Settings**.
-3. Paste API keys for the providers you want to track.
+3. Paste API keys for the providers you want to track. For Anthropic and OpenAI cost tracking, admin-level keys are required.
 4. For Claude Code rate-limit tracking, add your OAuth token (Settings → Claude Code → Rate-limit tracking).
 5. Usage refreshes automatically and the pill updates live.
 
