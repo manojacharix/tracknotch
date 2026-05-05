@@ -5,6 +5,7 @@ import SwiftUI
 ///  - API keys: paste fields for OpenAI & Anthropic
 struct ProviderConnectionView: View {
     @ObservedObject private var registry = ProviderRegistry.shared
+    @ObservedObject private var updater = UpdateChecker.shared
 
     var body: some View {
         ZStack {
@@ -40,14 +41,17 @@ struct ProviderConnectionView: View {
                 .frame(width: 56, height: 56)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-            VStack(spacing: 2) {
+            VStack(spacing: 6) {
                 Text("TrackNotch")
                     .font(.system(size: 20, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                 Text("Version \(AppVersion.short)")
                     .font(.system(size: 11, design: .rounded))
                     .foregroundColor(.white.opacity(0.4))
+
+                updateBadge
             }
+            .onAppear { UpdateChecker.shared.check() }
 
             Text("Track your LLM usage in real time — locally and privately. Costs and quotas across Claude, OpenAI, Cursor, and more, surfaced right at the notch.")
                 .font(.system(size: 12, design: .rounded))
@@ -55,6 +59,37 @@ struct ProviderConnectionView: View {
                 .multilineTextAlignment(.center)
                 .lineSpacing(2)
                 .padding(.top, 4)
+        }
+    }
+
+    // MARK: - Update badge
+
+    @ViewBuilder
+    private var updateBadge: some View {
+        switch updater.state {
+        case .available(let version, let url):
+            Button(action: { NSWorkspace.shared.open(url) }) {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(Color(hex: "b4e50d"))
+                        .frame(width: 6, height: 6)
+                    Text("v\(version) available — download")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(Color(hex: "b4e50d"))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule().fill(Color(hex: "b4e50d").opacity(0.12))
+                )
+            }
+            .buttonStyle(.borderless)
+        case .checking:
+            Text("Checking for updates…")
+                .font(.system(size: 11, design: .rounded))
+                .foregroundColor(.white.opacity(0.3))
+        default:
+            EmptyView()
         }
     }
 

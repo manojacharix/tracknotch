@@ -84,10 +84,13 @@ struct ExternalMonitorView: View {
     }
 
     private var hasIcons: Bool { !visibleProviders.isEmpty }
+    /// True when hovered but no providers are connected — show + icon to invite setup.
+    private var showPlusIcon: Bool { (isHovered || isExpanded) && registry.connectedProviders.isEmpty }
 
     // MARK: - Pill sizing
 
     private var targetPillWidth: CGFloat {
+        if showPlusIcon { return circleSize + sidePadding * 2 }
         let count = CGFloat(max(visibleProviders.count, 1))
         return count * iconSize + max(0, count - 1) * iconGap + sidePadding * 2
     }
@@ -327,20 +330,10 @@ struct ExternalMonitorView: View {
         cancelPendingTransitionWork()
         let nonce = beginTransition()
 
-        // If still has active providers, just retract to activity state (icons visible, pill stays)
+        // If still has active providers, pill stays visible — no animation needed.
+        // Don't touch iconsSpread here; toggling it false→true triggers onChange(of: hasIcons)
+        // which calls showWithActivity() and creates an animation loop.
         if hasIcons {
-            // Retract hover-only icons, keep active ones
-            withAnimation(.easeIn(duration: 0.2)) {
-                iconsSpread = false
-            }
-            let restoreWork = DispatchWorkItem {
-                guard transitionNonce == nonce, !isExpanded else { return }
-                withAnimation(.easeOut(duration: 0.2)) {
-                    iconsSpread = true  // re-spread with just active providers
-                }
-            }
-            iconRestoreWork = restoreWork
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: restoreWork)
             return
         }
 
@@ -480,6 +473,11 @@ struct ExternalMonitorView: View {
         #if DEBUG
         print("[ExternalMonitorView] openExpanded: isExpanded=\(isExpanded), contentVisible=\(contentVisible)")
         #endif
+        // No providers connected — open settings directly instead of empty dropdown
+        if registry.connectedProviders.isEmpty {
+            ConnectionWindowController.shared.open()
+            return
+        }
         cancelCollapse()
         cancelPendingTransitionWork()
         let nonce = beginTransition()
@@ -548,22 +546,33 @@ struct ExternalMonitorView: View {
 
     @ViewBuilder
     private var iconsView: some View {
-        HStack(spacing: iconGap) {
-            ForEach(Array(visibleProviders.enumerated()), id: \.element) { idx, provider in
-                if let usage = registry.usageMap[provider] {
-                    let centerIdx = visibleProviders.count / 2
-                    let distFromCenter = abs(idx - centerIdx)
+        if showPlusIcon {
+            // No providers connected — show + to invite setup
+            Image(systemName: "plus")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.white.opacity(0.7))
+                .opacity(iconsSpread ? 1 : 0)
+                .scaleEffect(iconsSpread ? 1.0 : 0.3)
+                .animation(.easeOut(duration: 0.22), value: iconsSpread)
+                .onTapGesture { ConnectionWindowController.shared.open() }
+        } else {
+            HStack(spacing: iconGap) {
+                ForEach(Array(visibleProviders.enumerated()), id: \.element) { idx, provider in
+                    if let usage = registry.usageMap[provider] {
+                        let centerIdx = visibleProviders.count / 2
+                        let distFromCenter = abs(idx - centerIdx)
 
-                    WingIconView(usage: usage)
-                        .opacity(iconsSpread ? 1 : 0)
-                        .scaleEffect(iconsSpread ? 1.0 : 0.3)
-                        .animation(
-                            .easeOut(duration: 0.22).delay(Double(distFromCenter) * staggerStep),
-                            value: iconsSpread
-                        )
+                        WingIconView(usage: usage)
+                            .opacity(iconsSpread ? 1 : 0)
+                            .scaleEffect(iconsSpread ? 1.0 : 0.3)
+                            .animation(
+                                .easeOut(duration: 0.22).delay(Double(distFromCenter) * staggerStep),
+                                value: iconsSpread
+                            )
+                    }
                 }
             }
+            .padding(.horizontal, sidePadding)
         }
-        .padding(.horizontal, sidePadding)
     }
 }

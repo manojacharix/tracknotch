@@ -88,7 +88,6 @@ xattr -cr "$APP_PATH" 2>/dev/null || true
 echo "==> Packaging DMG"
 create-dmg \
     --volname "TrackNotch $VERSION" \
-    --volicon "$APP_PATH/Contents/Resources/AppIcon.icns" \
     --window-pos 200 120 \
     --window-size 600 380 \
     --icon-size 96 \
@@ -97,6 +96,20 @@ create-dmg \
     --no-internet-enable \
     "$DMG_PATH" \
     "$APP_PATH"
+
+# Set the DMG file icon to the app icon so Finder shows it with the TrackNotch
+# icon instead of the generic document icon.
+ICNS="$APP_PATH/Contents/Resources/AppIcon.icns"
+if [[ -f "$ICNS" ]]; then
+    echo "==> Setting DMG file icon"
+    python3 - "$ICNS" "$DMG_PATH" <<'PYEOF'
+import sys
+from AppKit import NSWorkspace, NSImage
+icns, dmg = sys.argv[1], sys.argv[2]
+img = NSImage.alloc().initWithContentsOfFile_(icns)
+NSWorkspace.sharedWorkspace().setIcon_forFile_options_(img, dmg, 0)
+PYEOF
+fi
 
 echo
 echo "==> Build complete"
