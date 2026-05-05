@@ -77,7 +77,7 @@ struct ProviderConnectionView: View {
     private var reportBugSection: some View {
         SettingsSection(title: "Support", subtitle: "Something broken?") {
             Button(action: {
-                NSWorkspace.shared.open(URL(string: "https://github.com/manojacharix/tracknotch/issues/new")!)
+                NSWorkspace.shared.open(URL(string: "https://github.com/manojacharix/tracknotch/issues")!)
             }) {
                 HStack(spacing: 8) {
                     Image(systemName: "ladybug")

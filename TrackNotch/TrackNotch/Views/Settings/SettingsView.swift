@@ -188,7 +188,7 @@ struct GeneralSettingsTab: View {
 
             Section("Support") {
                 Button(action: {
-                    NSWorkspace.shared.open(URL(string: "https://github.com/manojacharix/tracknotch/issues/new")!)
+                    NSWorkspace.shared.open(URL(string: "https://github.com/manojacharix/tracknotch/issues")!)
                 }) {
                     HStack {
                         Image(systemName: "ladybug")

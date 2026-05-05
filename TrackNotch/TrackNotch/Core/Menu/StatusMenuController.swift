@@ -138,7 +138,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     @objc private func reportBug() {
-        NSWorkspace.shared.open(URL(string: "https://github.com/manojacharix/tracknotch/issues/new")!)
+        NSWorkspace.shared.open(URL(string: "https://github.com/manojacharix/tracknotch/issues")!)
     }
 
     @objc private func quitApp() {
