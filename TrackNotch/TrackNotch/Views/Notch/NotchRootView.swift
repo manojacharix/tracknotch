@@ -142,7 +142,15 @@ struct NotchRootView: View {
     }
 
     private var pillLeadingOffset: CGFloat {
-        if isExpanded { return (geo.map { $0.leftWingWidth + $0.notchWidth + $0.rightWingWidth } ?? expandedMaxWidth) / 2 - expandedMaxWidth / 2 }
+        if isExpanded {
+            // After the panel has snapped to fit the visible shape (post
+            // open animation), the SwiftUI canvas is now 420 wide and
+            // the pill must render at the leading edge — no offset.
+            // During the open animation, panel is still 580 wide and
+            // we offset by (580-420)/2 = 80 to center on the notch.
+            if frameReporter.panelFitsVisibleShape { return 0 }
+            return (geo.map { $0.leftWingWidth + $0.notchWidth + $0.rightWingWidth } ?? expandedMaxWidth) / 2 - expandedMaxWidth / 2
+        }
         guard let geo else { return 0 }
         return geo.leftWingWidth - leftWingWidth
     }
@@ -159,8 +167,14 @@ struct NotchRootView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.clear
-                .frame(width: geo.map { $0.leftWingWidth + $0.notchWidth + $0.rightWingWidth } ?? 580,
-                       height: trackNotchWindowHeight)
+                .frame(
+                    width: frameReporter.panelFitsVisibleShape
+                        ? expandedMaxWidth
+                        : (geo.map { $0.leftWingWidth + $0.notchWidth + $0.rightWingWidth } ?? 580),
+                    height: frameReporter.panelFitsVisibleShape
+                        ? notchShapeHeight
+                        : trackNotchWindowHeight
+                )
                 .allowsHitTesting(false)
 
             if let geo {
@@ -452,7 +466,7 @@ struct NotchRootView: View {
             let expandWork = DispatchWorkItem { [self] in
                 guard transitionNonce == nonce else { NSLog("[TN.diag] openExpanded fastpath CANCELLED"); return }
                 NSLog("[TN.diag] openExpanded fastpath morph running")
-                withAnimation(.interactiveSpring(response: 0.5, dampingFraction: 0.85, blendDuration: 0.12)) {
+                withAnimation(.interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)) {
                     isExpanded = true
                     pillExpanded = true
                 }
@@ -479,7 +493,7 @@ struct NotchRootView: View {
         let expandWork = DispatchWorkItem { [self] in
             guard transitionNonce == nonce else { NSLog("[TN.diag] openExpanded expandWork CANCELLED (nonce mismatch)"); return }
             NSLog("[TN.diag] openExpanded expandWork running (cold)")
-            withAnimation(.interactiveSpring(response: 0.5, dampingFraction: 0.85, blendDuration: 0.12)) {
+            withAnimation(.interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)) {
                 isExpanded = true
                 pillExpanded = true
             }
@@ -521,7 +535,7 @@ struct NotchRootView: View {
             // the view tree for ~300ms before restoreWork shrinks it — the
             // user perceives this as a wing flashing open during the close.
             iconsVisible = false
-            withAnimation(.interactiveSpring(response: 0.48, dampingFraction: 0.88, blendDuration: 0.1)) {
+            withAnimation(.easeIn(duration: 0.28)) {
                 isExpanded = false
                 pillExpanded = false
             }
@@ -601,12 +615,27 @@ struct NotchRootView: View {
                        bottomCornerRadius: isExpanded ? expandedBottomRadius : 14)
                 .fill(Color.black)
                 .frame(width: pillWidth, height: notchShapeHeight)
-                .shadow(color: .black.opacity(isExpanded ? 0.7 : 0.5),
-                        radius: isExpanded ? 24 : 8,
-                        y: isExpanded ? 10 : 0)
-                .animation(.interactiveSpring(response: 0.45, dampingFraction: 0.82, blendDuration: 0.1), value: pillWidth)
-                .animation(.interactiveSpring(response: 0.45, dampingFraction: 0.82, blendDuration: 0.1), value: notchShapeHeight)
-                .animation(.interactiveSpring(response: 0.45, dampingFraction: 0.82, blendDuration: 0.1), value: isExpanded)
+                .shadow(color: .black.opacity(isExpanded ? 0.25 : 0.5),
+                        radius: isExpanded ? 12 : 8,
+                        y: isExpanded ? 4 : 0)
+                .animation(
+                    isExpanded
+                        ? .interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)
+                        : .easeIn(duration: 0.28),
+                    value: pillWidth
+                )
+                .animation(
+                    isExpanded
+                        ? .interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)
+                        : .easeIn(duration: 0.28),
+                    value: notchShapeHeight
+                )
+                .animation(
+                    isExpanded
+                        ? .interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)
+                        : .easeIn(duration: 0.28),
+                    value: isExpanded
+                )
 
             // Wing icons (idle/hover state) — hidden while expanded
             // Always in tree while pill is expanded so child dissolve animations can play
@@ -683,11 +712,21 @@ struct NotchRootView: View {
                         .opacity(contentVisible ? 1 : 0)
                         .background(
                             GeometryReader { proxy in
-                                Color.clear.onAppear {
-                                    expandedContentHeight = proxy.size.height
-                                }.onChange(of: proxy.size.height) { h in
-                                    expandedContentHeight = h
-                                }
+                                Color.clear
+                                    .onAppear {
+                                        expandedContentHeight = proxy.size.height
+                                        // Also feed AppKit's hit-test rect so it
+                                        // tracks the actually-rendered dropdown
+                                        // height. Without this, the rect falls
+                                        // back to a 200pt floor and overhangs
+                                        // the visible shape — clicks in the
+                                        // overhang get silently absorbed.
+                                        frameReporter.dropdownContentHeight = proxy.size.height
+                                    }
+                                    .onChange(of: proxy.size.height) { h in
+                                        expandedContentHeight = h
+                                        frameReporter.dropdownContentHeight = h
+                                    }
                             }
                         )
                 }
@@ -697,7 +736,6 @@ struct NotchRootView: View {
         }
         .frame(width: pillWidth, height: notchShapeHeight, alignment: .top)
         .offset(x: pillLeadingOffset)
-        .animation(.interactiveSpring(response: 0.45, dampingFraction: 0.82, blendDuration: 0.1), value: pillLeadingOffset)
         // Pass all events through to StripPanel when collapsed; interactive when expanded
         .allowsHitTesting(isExpanded)
     }

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 
 // MARK: - Strip click panel
 
@@ -7,20 +8,8 @@ private final class PassthroughHostingView: NSHostingView<AnyView> {
     var interactiveRectProvider: (() -> NSRect?)?
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // The interactive rect is now live-measured from SwiftUI (see
-        // DropdownFrameReporter), so it precisely tracks the visible black
-        // shape. Anything outside that rect passes through to apps behind.
-        guard let rect = interactiveRectProvider?() else {
-            #if DEBUG
-            print("[Passthrough] hitTest pt=\(point) rect=nil → pass through")
-            #endif
-            return nil
-        }
-        let inside = rect.contains(point)
-        #if DEBUG
-        print("[Passthrough] hitTest pt=\(point) rect=\(rect) inside=\(inside)")
-        #endif
-        guard inside else { return nil }
+        guard let rect = interactiveRectProvider?() else { return nil }
+        guard rect.contains(point) else { return nil }
         return super.hitTest(point)
     }
 
@@ -222,6 +211,7 @@ final class NotchWindow: NSPanel {
     /// Publishes the measured dropdown content height from SwiftUI.
     /// Consumed by `interactiveContentRectInView` to compute a tight hit-test rect.
     private let frameReporter = DropdownFrameReporter()
+    private var contentHeightCancellable: AnyCancellable?
 
     init(screen: NSScreen, mode: NotchMode) {
         self.targetScreen = screen
@@ -649,11 +639,53 @@ final class NotchWindow: NSPanel {
         isDropdownVisible ? closeDropdown() : openDropdown()
     }
 
+    /// Resize the panel to fit the live-measured dropdown content height.
+    /// SwiftUI publishes the rendered content height via `frameReporter`;
+    /// this re-tightens the panel so the dead-click zone below the visible
+    /// shape stays at zero regardless of how many provider pills render.
+    private func observeDropdownContentHeight() {
+        contentHeightCancellable?.cancel()
+        // Debounce SwiftUI's measurement bursts (the dropdown content
+        // animates open across multiple frames; each renders a new
+        // height) so we don't visibly resize the panel several times
+        // per dropdown open. 80ms debounce settles to a stable size
+        // before committing the resize, eliminating the left/right
+        // jitter the user observed.
+        contentHeightCancellable = frameReporter.$dropdownContentHeight
+            .removeDuplicates()
+            .debounce(for: .milliseconds(80), scheduler: RunLoop.main)
+            .sink { [weak self] h in
+                guard let self, self.isDropdownVisible, h > 0 else { return }
+                let pillH = notchGeometry(screen: self.targetScreen).notchHeight
+                let totalH = pillH + h
+                let collapsed = self.collapsedFrame
+                let cx = collapsed.midX
+                let newFrame = NSRect(
+                    x: cx - self.expandedWindowWidth / 2,
+                    y: collapsed.maxY - totalH,
+                    width: self.expandedWindowWidth,
+                    height: totalH
+                )
+                if !NSEqualRects(self.frame, newFrame) {
+                    // animate:false so the panel snaps to size without
+                    // AppKit's default frame animation (which the user
+                    // perceives as the dropdown "resizing weirdly").
+                    self.setFrame(newFrame, display: true, animate: false)
+                }
+            }
+    }
+
     private func openDropdown() {
         NSLog("[TN.diag] openDropdown frame=\(frame) ignoresMouseEvents=\(ignoresMouseEvents) stripIME=\(stripPanel?.ignoresMouseEvents ?? true)")
         collapseFinalizeWork?.cancel()
         collapseFinalizeWork = nil
         isDropdownVisible = true
+
+        // Keep the panel at its FULL collapsed size (580×400) during the
+        // open animation so SwiftUI's ease-in/out plays inside the
+        // panel's full canvas — no apparent shift or finicky resize.
+        // The shrink to fit-the-visible-dropdown happens AFTER the
+        // SwiftUI open animation settles (see scheduled work below).
 
         // Allow hit-testing and make key so SwiftUI buttons fire correctly
         ignoresMouseEvents = false
@@ -664,10 +696,34 @@ final class NotchWindow: NSPanel {
 
         // Tell SwiftUI view to expand
         NotificationCenter.default.post(name: .notchExpandDropdown, object: nil)
-        // Read state again 0.5s later to see if dropdown is still visible
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self else { return }
-            NSLog("[TN.diag] openDropdown +0.5s isVisible=\(self.isVisible) alpha=\(self.alphaValue) frame=\(self.frame)")
+        // After the SwiftUI open animation settles (~0.5s), snap the
+        // panel to the fit-the-visible-shape size. The visible NotchShape
+        // is centered on the physical notch and stays put through the
+        // shrink (we keep X centered on notch, Y pinned to top), so the
+        // user sees no movement — only the surrounding transparent dead
+        // zone collapses so clicks outside the shape pass through.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
+            guard let self, self.isDropdownVisible else { return }
+            let pillH = notchGeometry(screen: self.targetScreen).notchHeight
+            let measured = self.frameReporter.dropdownContentHeight
+            let contentH: CGFloat = measured > 0 ? measured : 200
+            let totalH = pillH + contentH
+            let collapsed = self.collapsedFrame
+            let cx = collapsed.midX
+            let newFrame = NSRect(
+                x: cx - self.expandedWindowWidth / 2,
+                y: collapsed.maxY - totalH,
+                width: self.expandedWindowWidth,
+                height: totalH
+            )
+            self.setFrame(newFrame, display: true, animate: false)
+            // Tell SwiftUI to switch its canvas math to the 420 layout
+            // (no horizontal offset) — keeps the visible pill position
+            // invariant across the snap.
+            self.frameReporter.panelFitsVisibleShape = true
+            // Now that SwiftUI is settled, observe content-height
+            // changes so subsequent grid additions/removals re-tighten.
+            self.observeDropdownContentHeight()
         }
 
         // Cancel any lingering outside-click monitor before installing a new one
@@ -719,6 +775,17 @@ final class NotchWindow: NSPanel {
             NSEvent.removeMonitor(m)
             outsideClickMonitor = nil
         }
+
+        // Stop tracking content-height changes and restore the FULL
+        // collapsed frame BEFORE the SwiftUI close animation starts so
+        // the ease-in/out plays inside the panel's full canvas. Flip
+        // the SwiftUI canvas math FIRST (to 580-wide layout with pill
+        // offset 80) so the pill stays at the same screen position when
+        // the window grows back.
+        contentHeightCancellable?.cancel()
+        contentHeightCancellable = nil
+        frameReporter.panelFitsVisibleShape = false
+        setFrame(collapsedFrame, display: true, animate: false)
 
         // Only post collapse notification if we're initiating the close
         // (not if SwiftUI already posted it and we're responding)
