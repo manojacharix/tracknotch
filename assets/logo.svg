@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="120" height="120">
+  <defs>
+    <linearGradient id="starFill" x1="30%" y1="0%" x2="70%" y2="100%">
+      <stop offset="0%" stop-color="#6DD4F7"/>
+      <stop offset="100%" stop-color="#2B8FC4"/>
+    </linearGradient>
+  </defs>
+  <!--
+    Rounded 4-point star / notch sparkle shape.
+    Outer path (dark navy outline), inner path (blue fill).
+    Transparent background — works on light & dark GitHub themes.
+  -->
+  <!-- Outer dark stroke shape -->
+  <path
+    d="M100 10
+       C100 10 108 42 122 62
+       C136 82 168 90 168 100
+       C168 110 136 118 122 138
+       C108 158 100 190 100 190
+       C100 190 92 158 78 138
+       C64 118 32 110 32 100
+       C32 90 64 82 78 62
+       C92 42 100 10 100 10Z"
+    fill="#0d2235"
+    stroke="none"
+    stroke-linejoin="round"
+  />
+  <!-- Inner blue fill (inset ~10px) -->
+  <path
+    d="M100 24
+       C100 24 107 50 119 68
+       C131 86 156 93 156 100
+       C156 107 131 114 119 132
+       C107 150 100 176 100 176
+       C100 176 93 150 81 132
+       C69 114 44 107 44 100
+       C44 93 69 86 81 68
+       C93 50 100 24 100 24Z"
+    fill="url(#starFill)"
+    stroke="none"
+  />
+</svg>
