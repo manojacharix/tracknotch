@@ -1,87 +1,129 @@
-# TrackNotch
+<p align="center">
+  <img src="assets/logo.png" alt="TrackNotch" width="120" />
+</p>
 
-A native macOS menu-bar app that tracks your LLM usage in real time — across Claude, OpenAI, Cursor, Google, Codex, and Antigravity — and surfaces it in the notch (or top of the menu bar on non-notched Macs).
+<h1 align="center">TrackNotch</h1>
 
-No proxies. No cookies. No telemetry. Usage data is read locally from the providers' own files and APIs, and your API keys live in the macOS Keychain.
+<p align="center">
+  Real-time LLM usage tracking — right in your Mac's notch.
+</p>
 
-## Supported providers
+<p align="center">
+  <img src="https://img.shields.io/badge/macOS-13%2B-black?style=flat-square&logo=apple" />
+  <img src="https://img.shields.io/badge/Swift-5.9-orange?style=flat-square&logo=swift" />
+  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" />
+  <img src="https://img.shields.io/badge/status-beta-yellow?style=flat-square" />
+</p>
 
-| Provider | What it tracks |
+---
+
+TrackNotch is a native macOS app that monitors your LLM usage across Claude, OpenAI, Cursor, Codex, and more — and surfaces it in the notch (or top of the menu bar on non-notched Macs). No proxies. No cookies. No telemetry.
+
+## Features
+
+| | |
 |---|---|
-| Claude (Anthropic) | API spend + Claude Code session usage |
-| OpenAI | API spend |
-| Cursor | Subscription usage |
-| Google (Gemini) | API spend |
-| Codex | Session usage |
-| Antigravity | Session usage |
+| **Local-first** | Reads usage directly from providers' own files and APIs. Nothing leaves your machine. |
+| **Multi-provider** | Claude Code, OpenAI API, Cursor, Codex, Anthropic API, Google Gemini — all in one pill. |
+| **Context arc** | Visual arc shows how full your active Claude session's context window is, live. |
+| **Budget tracking** | Set monthly API budgets for OpenAI and Anthropic. See spend at a glance. |
+| **Rate-limit headers** | OAuth token support for real 5h/7d Claude rate-limit data from Anthropic's headers. |
+| **Notch-native** | Slides out of the notch with a springy open animation and clean ease-in close. |
+| **Menu bar fallback** | Works on non-notched Macs too — sits cleanly in the menu bar. |
+| **Keychain storage** | API keys stored in macOS Keychain. Never written to disk in plaintext. |
+
+## Supported Providers
+
+| Provider | Tracks |
+|---|---|
+| **Claude Code** | Session context usage, 5h/7d rate limits via OAuth |
+| **Anthropic API** | Monthly API spend |
+| **OpenAI API** | Monthly API spend |
+| **Cursor** | Subscription fast-request usage |
+| **Codex** | Session usage |
+| **Google Gemini** | API spend |
 
 ## Install
 
-1. Download the latest `TrackNotch-x.y.z.dmg` from [Releases](https://github.com/manojacharix/trackllmall/releases).
+1. Download the latest `TrackNotch-x.y.z.dmg` from [Releases](https://github.com/manojacharix/tracknotch/releases).
 2. Open the DMG and drag **TrackNotch.app** into **Applications**.
-3. **First launch — important:** because this build is unsigned (no Apple Developer ID yet), macOS Gatekeeper will refuse to open it normally. Instead:
-   - In Finder, open `Applications`.
-   - **Right-click** `TrackNotch.app` → **Open** → **Open** in the dialog.
-   - This only needs to be done once. After that, launch it normally.
-   - If macOS still blocks it, run `xattr -cr /Applications/TrackNotch.app` in Terminal and retry.
+3. **First launch:** Because this build is unsigned, macOS Gatekeeper will block it.
+   - In Finder → Applications → **right-click** `TrackNotch.app` → **Open** → **Open**.
+   - This one-time step is enough. After that, launch normally.
+   - If still blocked: `xattr -cr /Applications/TrackNotch.app` in Terminal, then retry.
 
-A signed and notarized build is on the roadmap (see [Roadmap](#roadmap)).
+> Signed + notarized build is on the roadmap — no more right-click needed.
 
-## First-run setup
+## Setup
 
-1. After launch, the pill appears at the top of the screen (overlapping the notch on notched Macs, or the menu bar otherwise).
+1. Launch TrackNotch — the pill appears at the top of your screen.
 2. Click the pill → dropdown opens → **Settings**.
-3. Add API keys for the providers you want to track. Keys are stored in the macOS Keychain — never written to disk in plaintext, never sent anywhere except the corresponding provider's API.
-4. Usage refreshes automatically and the pill updates live.
+3. Paste API keys for the providers you want to track.
+4. For Claude Code rate-limit tracking, add your OAuth token (Settings → Claude Code → Rate-limit tracking).
+5. Usage refreshes automatically and the pill updates live.
+
+### Claude Code context arc
+
+TrackNotch reads Claude Code's local JSONL session files to calculate context usage. No token or key needed.
+
+To also get real 5h/7d rate-limit data, add an OAuth token:
+
+```bash
+# Install Claude Code if you haven't already
+npm install -g @anthropic-ai/claude-code
+
+# Generate an OAuth token
+claude setup-token
+```
+
+Paste the token (starts with `sk-ant-oat01-…`) into Settings → Claude Code → Rate-limit tracking.
 
 ## Requirements
 
 - macOS 13 (Ventura) or later
 - Apple Silicon or Intel Mac
-- An API key for each provider you want to track (Claude Code and Cursor also work via local file monitoring without keys for some metrics)
+- API keys for providers you want to track (Claude Code and Cursor work via local monitoring without keys)
 
 ## Privacy
 
-See [PRIVACY.md](PRIVACY.md). The short version:
+All data stays local. Full details in [PRIVACY.md](PRIVACY.md).
 
-- API keys are stored in the macOS Keychain.
-- Local file reads are scoped to the providers' own data directories (e.g. `~/.claude`).
-- Network requests only go to the official provider APIs you've configured.
-- Zero analytics, zero telemetry, zero third-party services.
+- API keys → macOS Keychain only
+- Local reads scoped to provider data dirs (`~/.claude`, etc.)
+- Network requests only to provider APIs you configure
+- Zero analytics, zero telemetry, zero third-party services
 
-## Why is the app not sandboxed?
+## Why is the app unsandboxed?
 
-TrackNotch reads provider data from locations like `~/.claude` that lie outside the App Sandbox. To support those flows without prompting for user-selected folder access on every launch, the app ships unsandboxed and is distributed directly (not via the Mac App Store). The trade-off is documented and intentional.
+TrackNotch reads provider data from locations like `~/.claude` that are outside the App Sandbox. Shipping unsandboxed avoids per-launch folder-access prompts. The tradeoff is documented and intentional — see [PRIVACY.md](PRIVACY.md).
+
+## Building from Source
+
+```bash
+git clone https://github.com/manojacharix/tracknotch.git
+cd tracknotch/TrackNotch
+open TrackNotch.xcodeproj
+```
+
+Requires Xcode 15+ and macOS 13 SDK. Press `⌘R` to run, `⌘U` for the test suite.
+
+```bash
+# Build a DMG locally
+./scripts/build-release.sh
+# Output: build/TrackNotch-<version>.dmg
+```
 
 ## Roadmap
 
-- [ ] Apple Developer ID signing + notarization (no more right-click-Open)
-- [ ] First-launch onboarding
+- [ ] Apple Developer ID signing + notarization
 - [ ] Auto-update via Sparkle
-- [ ] Crash/error logs in `~/Library/Logs/TrackNotch/`
+- [ ] First-launch onboarding flow
 - [ ] Light-mode support
-
-## Building from source
-
-```bash
-git clone https://github.com/manojacharix/trackllmall.git
-cd trackllmall
-open TrackNotch/TrackNotch.xcodeproj
-```
-
-Xcode 15+, macOS 13 SDK or later. Press ⌘R to run, ⌘U to run the test suite (34 unit tests).
-
-To build a DMG locally:
-
-```bash
-./scripts/build-release.sh
-```
-
-Output: `build/TrackNotch-<version>.dmg`.
+- [ ] Crash logs in `~/Library/Logs/TrackNotch/`
 
 ## Contributing
 
-Bug reports and PRs welcome. Please open an issue first for anything bigger than a small fix so we can discuss approach.
+Bug reports and PRs welcome. Open an issue first for anything larger than a small fix.
 
 ## License
 
