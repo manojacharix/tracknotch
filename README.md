@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="TrackNotch" width="120" />
+  <img src="branding/TrackNotch logos/variations/tracknotch_dark_logo.png" alt="TrackNotch" width="120" />
 </p>
 
 <h1 align="center">TrackNotch</h1>
