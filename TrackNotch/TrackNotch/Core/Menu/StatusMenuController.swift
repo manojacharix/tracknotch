@@ -68,6 +68,16 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        let bugItem = NSMenuItem(
+            title: "Report a Bug…",
+            action: #selector(reportBug),
+            keyEquivalent: ""
+        )
+        bugItem.target = self
+        menu.addItem(bugItem)
+
+        menu.addItem(.separator())
+
         let quitItem = NSMenuItem(
             title: "Quit TrackNotch",
             action: #selector(quitApp),
@@ -125,6 +135,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func toggleNotch() {
         AppSettings.shared.isNotchEnabled.toggle()
+    }
+
+    @objc private func reportBug() {
+        NSWorkspace.shared.open(URL(string: "https://github.com/manojacharix/tracknotch/issues/new")!)
     }
 
     @objc private func quitApp() {

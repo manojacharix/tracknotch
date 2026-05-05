@@ -20,6 +20,7 @@ struct ProviderConnectionView: View {
                     VStack(alignment: .leading, spacing: 24) {
                         autoDetectedSection
                         apiKeySection
+                        reportBugSection
                     }
                     .padding(.horizontal, 24)
                     .padding(.bottom, 24)
@@ -70,6 +71,34 @@ struct ProviderConnectionView: View {
                     )
                 }
             }
+        }
+    }
+
+    private var reportBugSection: some View {
+        SettingsSection(title: "Support", subtitle: "Something broken?") {
+            Button(action: {
+                NSWorkspace.shared.open(URL(string: "https://github.com/manojacharix/tracknotch/issues/new")!)
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "ladybug")
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.7))
+                    Text("Report a Bug")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.85))
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.35))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white.opacity(0.06))
+                )
+            }
+            .buttonStyle(.borderless)
         }
     }
 

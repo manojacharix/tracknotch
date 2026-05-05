@@ -17,7 +17,7 @@ struct SettingsView: View {
             GeneralSettingsTab(settings: settings)
                 .tabItem { Label("General", systemImage: "gear") }
         }
-        .frame(width: 460, height: 440)
+        .frame(width: 460, height: 480)
     }
 }
 
@@ -184,6 +184,17 @@ struct GeneralSettingsTab: View {
         Form {
             Section("Startup") {
                 Toggle("Launch at login", isOn: $settings.launchAtLogin)
+            }
+
+            Section("Support") {
+                Button(action: {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/manojacharix/tracknotch/issues/new")!)
+                }) {
+                    HStack {
+                        Image(systemName: "ladybug")
+                        Text("Report a Bug")
+                    }
+                }
             }
         }
         .padding()
