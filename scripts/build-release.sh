@@ -88,6 +88,7 @@ xattr -cr "$APP_PATH" 2>/dev/null || true
 echo "==> Packaging DMG"
 create-dmg \
     --volname "TrackNotch $VERSION" \
+    --volicon "$APP_PATH/Contents/Resources/AppIcon.icns" \
     --window-pos 200 120 \
     --window-size 600 380 \
     --icon-size 96 \
