@@ -245,7 +245,7 @@ final class NotchWindow: NSPanel {
 
         configure()
         setContent()
-        if mode.isExternal {
+        if mode.isDrawnNotch {
             installExternalStripPanel()
             installExternalHoverMonitor()
         } else {
@@ -280,7 +280,7 @@ final class NotchWindow: NSPanel {
     private func setContent() {
         let hostingView: PassthroughHostingView
 
-        if mode.isExternal {
+        if mode.isDrawnNotch {
             let view = AnyView(
                 ExternalMonitorView()
                     .environmentObject(ProviderRegistry.shared)
@@ -385,7 +385,7 @@ final class NotchWindow: NSPanel {
 
     /// Resizes the external StripPanel to match the current pill hover zone.
     private func updateExternalStripFrame() {
-        guard mode.isExternal, let strip = stripPanel else { return }
+        guard mode.isDrawnNotch, let strip = stripPanel else { return }
         let newRect = hoverRect
         if strip.frame != newRect {
             strip.setFrame(newRect, display: true)
@@ -472,11 +472,11 @@ final class NotchWindow: NSPanel {
     }
 
     private var activeStripRect: NSRect {
-        mode.isExternal ? hoverRect : hardwareStripRect
+        mode.isDrawnNotch ? hoverRect : hardwareStripRect
     }
 
     private static func collapsedFrame(for screen: NSScreen, mode: NotchMode) -> NSRect {
-        mode.isExternal ? externalPanelFrame(screen: screen) : notchPanelFrame(screen: screen)
+        mode.isDrawnNotch ? externalPanelFrame(screen: screen) : notchPanelFrame(screen: screen)
     }
 
     private var collapsedFrame: NSRect {
@@ -558,7 +558,7 @@ final class NotchWindow: NSPanel {
         // narrow the actual clickable hit zone to match what's visually drawn,
         // so clicks landing in the empty wing zone fall through to apps below
         // instead of being absorbed by an invisible rectangle.
-        if mode.isExternal || isDropdownVisible {
+        if mode.isDrawnNotch || isDropdownVisible {
             let pad: CGFloat = isDropdownVisible ? 0 : 6
             sv.clickableRect = pad > 0
                 ? NSRect(x: pad, y: 0, width: newRect.width - pad * 2, height: newRect.height)
@@ -607,7 +607,7 @@ final class NotchWindow: NSPanel {
         // shape is clearly pill-like to the user.
         let extPillHeight: CGFloat = 32
         let sideInset: CGFloat = 4
-        let dropdownW: CGFloat = mode.isExternal
+        let dropdownW: CGFloat = mode.isDrawnNotch
             ? min(380, targetScreen.frame.width - 40)
             : expandedWindowWidth
         let pillW: CGFloat = dropdownW - sideInset * 2
@@ -686,10 +686,10 @@ final class NotchWindow: NSPanel {
             .debounce(for: .milliseconds(80), scheduler: RunLoop.main)
             .sink { [weak self] h in
                 guard let self, self.isDropdownVisible, h > 0 else { return }
-                let pillH: CGFloat = self.mode.isExternal
+                let pillH: CGFloat = self.mode.isDrawnNotch
                     ? 32
                     : notchGeometry(screen: self.targetScreen).notchHeight
-                let dropW: CGFloat = self.mode.isExternal
+                let dropW: CGFloat = self.mode.isDrawnNotch
                     ? min(380, self.targetScreen.frame.width - 40)
                     : self.expandedWindowWidth
                 let totalH = pillH + h
@@ -727,7 +727,7 @@ final class NotchWindow: NSPanel {
         ignoresMouseEvents = false
         stripPanel?.ignoresMouseEvents = true
         updateStripFrame()
-        if mode.isExternal {
+        if mode.isDrawnNotch {
             orderFrontRegardless()
         } else {
             makeKeyAndOrderFront(nil)
@@ -744,10 +744,10 @@ final class NotchWindow: NSPanel {
         // zone collapses so clicks outside the shape pass through.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
             guard let self, self.isDropdownVisible else { return }
-            let pillH: CGFloat = self.mode.isExternal
-                ? 32   // extPillHeight — external pill is always 32pt tall
+            let pillH: CGFloat = self.mode.isDrawnNotch
+                ? 32   // extPillHeight — drawn notch/pill is always 32pt tall
                 : notchGeometry(screen: self.targetScreen).notchHeight
-            let dropW: CGFloat = self.mode.isExternal
+            let dropW: CGFloat = self.mode.isDrawnNotch
                 ? min(380, self.targetScreen.frame.width - 40)
                 : self.expandedWindowWidth
             let measured = self.frameReporter.dropdownContentHeight
@@ -866,7 +866,7 @@ final class NotchWindow: NSPanel {
         // External monitor panels never become key (orderFrontRegardless), so
         // resignKey is spurious — skip to avoid the openDropdown→resignKey→
         // closeDropdown loop on notchless Macs.
-        guard !mode.isExternal else { return }
+        guard !mode.isDrawnNotch else { return }
         // If we lost key while the dropdown was visible, another window grabbed
         // focus (e.g. the Settings dialog opened via the menu bar). Force-close
         // the dropdown so our state flags reset and the new key window can
@@ -890,7 +890,7 @@ final class NotchWindow: NSPanel {
     /// The global mouseMoved monitor context goes stale during sleep.
     func refreshAfterWake() {
         if let m = externalHoverMonitor { NSEvent.removeMonitor(m); externalHoverMonitor = nil }
-        if mode.isExternal { installExternalHoverMonitor() }
+        if mode.isDrawnNotch { installExternalHoverMonitor() }
         // Reset any stale hover state from before sleep
         ProviderRegistry.shared.isExternalHovered = false
         hoverLeaveTimer?.invalidate()

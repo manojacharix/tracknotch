@@ -7,10 +7,19 @@ import XCTest
 /// (recommended), these tests can call it directly.
 final class NotchModeDetectionTests: XCTestCase {
 
-    func test_isExternal_includesSoftwareNotch() {
+    // isExternal: true only for standalone external monitors (not built-in screens)
+    func test_isExternal_onlyExternalMonitor() {
         XCTAssertTrue(NotchMode.externalMonitor.isExternal)
-        XCTAssertTrue(NotchMode.softwareNotch.isExternal)
+        XCTAssertFalse(NotchMode.softwareNotch.isExternal,
+                       "softwareNotch is a built-in screen; isExternal must be false")
         XCTAssertFalse(NotchMode.hardwareNotch.isExternal)
+    }
+
+    // isDrawnNotch: true when a notch/pill is software-rendered (softwareNotch or externalMonitor)
+    func test_isDrawnNotch_softwareNotchAndExternal() {
+        XCTAssertTrue(NotchMode.softwareNotch.isDrawnNotch)
+        XCTAssertTrue(NotchMode.externalMonitor.isDrawnNotch)
+        XCTAssertFalse(NotchMode.hardwareNotch.isDrawnNotch)
     }
 
     func test_isHardware_onlyHardware() {

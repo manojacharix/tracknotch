@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 
 enum NotchMode {
     case hardwareNotch
@@ -8,13 +9,19 @@ enum NotchMode {
     static func detect(for screen: NSScreen) -> NotchMode {
         if let left = screen.auxiliaryTopLeftArea, left.width > 0 { return .hardwareNotch }
         if screen.safeAreaInsets.top > 0 { return .hardwareNotch }
-        // Built-in screens always contain "Built-in" in their localizedName.
-        if screen.localizedName.contains("Built-in") { return .softwareNotch }
+        // Use CGDisplayIsBuiltin for locale-independent built-in display detection.
+        if let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
+           CGDisplayIsBuiltin(id) != 0 {
+            return .softwareNotch
+        }
         return .externalMonitor
     }
 
-    var isHardware: Bool { self == .hardwareNotch }
-    var isExternal: Bool { self == .softwareNotch || self == .externalMonitor }
+    var isHardware: Bool   { self == .hardwareNotch }
+    /// True only for standalone external monitors (not built-in screens).
+    var isExternal: Bool   { self == .externalMonitor }
+    /// True when a notch/pill must be software-drawn (softwareNotch or externalMonitor).
+    var isDrawnNotch: Bool { self == .softwareNotch || self == .externalMonitor }
 }
 
 // MARK: - Sizing helpers (mirrors agentnotch NotchSizing)
