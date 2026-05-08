@@ -7,6 +7,11 @@ struct ProviderConnectionView: View {
     @ObservedObject private var registry = ProviderRegistry.shared
     @ObservedObject private var updater = UpdateChecker.shared
 
+    @State private var headerVisible = false
+    @State private var section1Visible = false
+    @State private var section2Visible = false
+    @State private var section3Visible = false
+
     var body: some View {
         ZStack {
             Color(hex: "252728").ignoresSafeArea()
@@ -16,12 +21,20 @@ struct ProviderConnectionView: View {
                     .padding(.top, 28)
                     .padding(.horizontal, 32)
                     .padding(.bottom, 20)
+                    .opacity(headerVisible ? 1 : 0)
+                    .offset(y: headerVisible ? 0 : 10)
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         autoDetectedSection
+                            .opacity(section1Visible ? 1 : 0)
+                            .offset(y: section1Visible ? 0 : 10)
                         apiKeySection
+                            .opacity(section2Visible ? 1 : 0)
+                            .offset(y: section2Visible ? 0 : 10)
                         reportBugSection
+                            .opacity(section3Visible ? 1 : 0)
+                            .offset(y: section3Visible ? 0 : 10)
                     }
                     .padding(.horizontal, 24)
                     .padding(.bottom, 24)
@@ -29,6 +42,12 @@ struct ProviderConnectionView: View {
             }
         }
         .frame(width: 480, height: 520)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.22)) { headerVisible = true }
+            withAnimation(.easeOut(duration: 0.22).delay(0.07)) { section1Visible = true }
+            withAnimation(.easeOut(duration: 0.22).delay(0.12)) { section2Visible = true }
+            withAnimation(.easeOut(duration: 0.22).delay(0.17)) { section3Visible = true }
+        }
     }
 
     // MARK: - Header
@@ -48,8 +67,6 @@ struct ProviderConnectionView: View {
                 Text("Version \(AppVersion.short)")
                     .font(.system(size: 11, design: .rounded))
                     .foregroundColor(.white.opacity(0.4))
-
-                updateBadge
             }
             .onAppear { UpdateChecker.shared.check() }
 
@@ -59,6 +76,9 @@ struct ProviderConnectionView: View {
                 .multilineTextAlignment(.center)
                 .lineSpacing(2)
                 .padding(.top, 4)
+
+            updateBadge
+                .padding(.top, 8)
         }
     }
 
@@ -69,25 +89,28 @@ struct ProviderConnectionView: View {
         switch updater.state {
         case .available(let version, let url):
             Button(action: { NSWorkspace.shared.open(url) }) {
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(Color(hex: "b4e50d"))
-                        .frame(width: 6, height: 6)
-                    Text("v\(version) available — download")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(Color(hex: "b4e50d"))
+                    Text("Update to v\(version)")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundColor(Color(hex: "b4e50d"))
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
                 .background(
-                    Capsule().fill(Color(hex: "b4e50d").opacity(0.12))
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color(hex: "b4e50d").opacity(0.15))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Color(hex: "b4e50d").opacity(0.35), lineWidth: 1)
+                        )
                 )
             }
             .buttonStyle(.borderless)
         case .checking:
-            Text("Checking for updates…")
-                .font(.system(size: 11, design: .rounded))
-                .foregroundColor(.white.opacity(0.3))
+            EmptyView()
         default:
             EmptyView()
         }

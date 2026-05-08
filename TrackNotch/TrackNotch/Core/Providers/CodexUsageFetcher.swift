@@ -144,7 +144,7 @@ final class CodexUsageFetcher: ObservableObject {
             }
             if let secondary = rateLimit["secondary_window"] as? [String: Any] {
                 let pct = (secondary["used_percent"] as? Double ?? 0) * 100
-                secondaryUsedPercent = pct > 0 ? pct : nil
+                secondaryUsedPercent = pct
                 if let resetStr = secondary["reset_at"] as? String {
                     secondaryResetAt = ISO8601DateFormatter().date(from: resetStr)
                 } else if let resetAfter = secondary["reset_after_seconds"] as? Double {
@@ -161,7 +161,7 @@ final class CodexUsageFetcher: ObservableObject {
         var usage = ProviderUsage(
             provider: .codex,
             billingType: .subscription,
-            window: .daily,
+            window: .fiveHour,
             percentage: usedPercent,
             resetsAt: resetAt,
             tokensUsed: monitor.todayTokens > 0 ? monitor.todayTokens : nil,
@@ -173,6 +173,7 @@ final class CodexUsageFetcher: ObservableObject {
             isActivelyConsuming: monitor.isActivelyConsuming
         )
         usage.secondaryPercentage = secondaryUsedPercent
+        usage.secondaryWindow = .weekly
         usage.secondaryResetsAt = secondaryResetAt
         usage.fetchError = lastFetchError
         return usage

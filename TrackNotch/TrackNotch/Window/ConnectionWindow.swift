@@ -59,13 +59,26 @@ final class ConnectionWindowController {
         win.level = NSWindow.Level(Int(CGWindowLevelForKey(.mainMenuWindow)) + 4)
 
         NSApp.activate(ignoringOtherApps: true)
+        win.alphaValue = 0
         win.makeKeyAndOrderFront(nil)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            win.animator().alphaValue = 1
+        }
 
         self.window = win
     }
 
     func close() {
-        window?.close()
+        guard let win = window else { return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            win.animator().alphaValue = 0
+        }, completionHandler: {
+            win.close()
+        })
         window = nil
     }
 }

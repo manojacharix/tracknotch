@@ -218,34 +218,6 @@ struct ExternalMonitorView: View {
                 )
                 .frame(width: isExpanded ? extExpandedWidth : pillWidth,
                        height: shapeHeight, alignment: .top)
-                // True blur shadow: duplicate shape rendered behind + gaussian blur.
-                // .shadow() only controls opacity not blur quality; this gives a
-                // soft diffuse glow that actually looks blurred.
-                .background(
-                    Group {
-                        if pillPhase >= 2 {
-                            NotchShape(
-                                topCornerRadius: isExpanded ? extExpandedTopRadius : 6,
-                                bottomCornerRadius: isExpanded ? extExpandedBottomRadius : pillCornerRadius
-                            )
-                            .fill(Color.black.opacity(0.55))
-                            .blur(radius: isExpanded ? 22 : 12)
-                            .offset(y: isExpanded ? 10 : 4)
-                        } else {
-                            RoundedRectangle(cornerRadius: pillRadius)
-                                .fill(Color.black.opacity(0.3))
-                                .blur(radius: 6)
-                                .offset(y: 2)
-                        }
-                    }
-                    .animation(
-                        isExpanded
-                            ? .interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)
-                            : .easeIn(duration: 0.28),
-                        value: isExpanded
-                    )
-                    .allowsHitTesting(false)
-                )
                 .animation(
                     isExpanded
                         ? .interactiveSpring(response: 0.52, dampingFraction: 0.72, blendDuration: 0.1)
@@ -258,9 +230,10 @@ struct ExternalMonitorView: View {
                         : .easeIn(duration: 0.28),
                     value: shapeHeight
                 )
-                .animation(.easeInOut(duration: 0.25), value: pillWidth)
-                .animation(.easeInOut(duration: 0.25), value: pillHeight)
-                .animation(.easeInOut(duration: 0.2), value: pillRadius)
+                // Single animation keyed on pillPhase drives width, height, and cornerRadius
+                // in lockstep — prevents the brief rectangular flash that occurs when
+                // independent value: animations desync across the circle→dot transition.
+                .animation(.easeInOut(duration: 0.22), value: pillPhase)
                 .animation(.easeInOut(duration: 0.2), value: pillOpacity)
                 .opacity(pillOpacity)
                 .allowsHitTesting(isExpanded)

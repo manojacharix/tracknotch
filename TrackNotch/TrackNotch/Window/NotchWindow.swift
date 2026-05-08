@@ -6,11 +6,28 @@ import Combine
 
 private final class PassthroughHostingView: NSHostingView<AnyView> {
     var interactiveRectProvider: (() -> NSRect?)?
+    /// Called when a mouseDown lands in the pill bar strip (top pillHeight pts).
+    /// Bypasses SwiftUI gesture routing entirely — guaranteed to fire on any click
+    /// in the notch bar area regardless of what SwiftUI views are on top.
+    var onPillBarTap: (() -> Void)?
+    /// Height of the pill bar strip in points. Set by NotchWindow after geometry is known.
+    var pillBarHeight: CGFloat = 39
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let rect = interactiveRectProvider?() else { return nil }
         guard rect.contains(point) else { return nil }
         return super.hitTest(point)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let pt = convert(event.locationInWindow, from: nil)
+        // NSHostingView is flipped (y=0 at top). Pill bar is at top,
+        // so pt.y <= pillBarHeight means the click is in the notch bar.
+        if pt.y <= pillBarHeight {
+            onPillBarTap?()
+            return
+        }
+        super.mouseDown(with: event)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
@@ -288,6 +305,12 @@ final class NotchWindow: NSPanel {
         hostingView.interactiveRectProvider = { [weak self] in
             self?.interactiveContentRectInView
         }
+        hostingView.onPillBarTap = { [weak self] in
+            guard let self, self.isDropdownVisible else { return }
+            NSLog("[TN.diag] PassthroughHostingView pillBarTap — closing dropdown")
+            self.toggleDropdown()
+        }
+        hostingView.pillBarHeight = notchGeometry(screen: targetScreen).notchHeight
         hostingView.wantsLayer = true
         hostingView.layer?.masksToBounds = false
         hostingView.layer?.drawsAsynchronously = true
