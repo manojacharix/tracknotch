@@ -1,22 +1,20 @@
 import AppKit
 
-/// Determines which rendering mode to use for a given screen.
-/// Two variants only:
-///   - hardwareNotch  — display with a physical notch (uses notch-hugging wings UI)
-///   - external       — everything else: external monitors, notchless built-ins,
-///                      and clamshell mode (uses floating dot/pill UI)
 enum NotchMode {
     case hardwareNotch
-    case external
+    case softwareNotch    // notchless built-in Mac (M1 Air etc.) — renders a drawn notch
+    case externalMonitor  // standalone external display — renders a floating pill
 
     static func detect(for screen: NSScreen) -> NotchMode {
         if let left = screen.auxiliaryTopLeftArea, left.width > 0 { return .hardwareNotch }
         if screen.safeAreaInsets.top > 0 { return .hardwareNotch }
-        return .external
+        // Built-in screens always contain "Built-in" in their localizedName.
+        if screen.localizedName.contains("Built-in") { return .softwareNotch }
+        return .externalMonitor
     }
 
     var isHardware: Bool { self == .hardwareNotch }
-    var isExternal: Bool { self == .external }
+    var isExternal: Bool { self == .softwareNotch || self == .externalMonitor }
 }
 
 // MARK: - Sizing helpers (mirrors agentnotch NotchSizing)
