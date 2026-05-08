@@ -6,7 +6,8 @@
 # Internal-only docs and assets (not for public repo)
 .internal-docs/
 Figma reference/
-branding/concepts/
+branding/
+!branding/TrackNotch logos/variations/tracknotch_dark_logo.png
 
 # Build output
 build/
