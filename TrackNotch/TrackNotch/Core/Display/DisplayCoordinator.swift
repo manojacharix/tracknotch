@@ -10,7 +10,7 @@ final class DisplayCoordinator: ObservableObject {
 
     /// Keyed by CGDirectDisplayID so NSScreen object churn (clamshell, reconnect)
     /// doesn't create duplicate windows for the same physical display.
-    private var notchWindows: [UInt32: NotchWindow] = [:]
+    private var notchWindows: [UInt32: NotchWindowBase] = [:]
     private var screenObserver: Any?
     private var wakeObserver: Any?
     private var screenChangeWork: DispatchWorkItem?
@@ -90,12 +90,11 @@ final class DisplayCoordinator: ObservableObject {
 
     private func addWindow(id: UInt32, for screen: NSScreen) {
         let mode = NotchMode.detect(for: screen)
-        let window = NotchWindow(screen: screen, mode: mode)
+        let window: NotchWindowBase = mode.isHardware
+            ? HardwareNotchWindow(screen: screen, mode: mode)
+            : ExternalNotchWindow(screen: screen, mode: mode)
         window.show()
         notchWindows[id] = window
-        #if DEBUG
-        print("[Display] Created \(mode) window for display \(id)")
-        #endif
     }
 
     private func observeScreenChanges() {
