@@ -261,7 +261,7 @@ struct DropdownProviderPill: View {
                         // above 100% (e.g. rate-limit hit at 123%) don't
                         // overflow past the capsule into the icon area.
                         // The percentage text still shows the true value.
-                        let fillWidth = hasProgress ? min(w, max(pillHeight, w * CGFloat(displayPct / 100))) : 0
+                        let fillWidth = hasProgress ? min(w, w * CGFloat(displayPct / 100)) : 0
                         if hasProgress {
                             LiquidFill(percentage: displayPct, height: pillHeight)
                                 .frame(width: fillWidth, height: pillHeight)
@@ -298,16 +298,18 @@ struct DropdownProviderPill: View {
                                 }
                             }
                         } else {
-                            // Subscription/local: percentage as primary
-                            let hasProgress = displayPct > 0
+                            // Subscription/local: percentage as primary.
+                            // Text is white at 0–10% (fill is thin/absent, dark bg shows through).
+                            // Above 10% the fill covers the text area — switch to dark charcoal.
+                            let onFill = displayPct > 10
                             Text("\(Int(displayPct))%")
                                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .foregroundColor(hasProgress ? Color.black.opacity(0.65) : .white.opacity(0.45))
+                                .foregroundColor(onFill ? Color(hex: "252728") : .white.opacity(displayPct > 0 ? 1 : 0.45))
                                 .monospacedDigit()
                             if let detail = detailLabel {
                                 Text(detail)
                                     .font(.system(size: 8, weight: .regular, design: .rounded))
-                                    .foregroundColor(hasProgress ? Color.black.opacity(0.5) : .white.opacity(0.3))
+                                    .foregroundColor(onFill ? Color(hex: "252728").opacity(0.7) : .white.opacity(displayPct > 0 ? 0.75 : 0.3))
                                     .monospacedDigit()
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.8)
@@ -325,7 +327,7 @@ struct DropdownProviderPill: View {
                             Image(usage.provider.iconName)
                                 .resizable()
                                 .scaledToFit()
-                                .foregroundColor(isAPIToken ? .white.opacity(0.5) : (displayPct > 0 ? Color.black.opacity(0.55) : .white.opacity(0.4)))
+                                .foregroundColor(isAPIToken ? .white.opacity(0.5) : (displayPct > 0 ? .white : .white.opacity(0.4)))
                                 .frame(width: 15, height: 15)
                             if let err = usage.fetchError, err != "orgs_only" {
                                 Circle()
