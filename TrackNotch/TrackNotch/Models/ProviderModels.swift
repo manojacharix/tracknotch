@@ -22,15 +22,12 @@ enum BillingType {
 // MARK: - Provider
 
 enum LLMProvider: String, CaseIterable, Identifiable, Codable {
-    // Tier 1: Local file monitors (zero auth)
     case claudeCode     = "claude_code"
-    case codex          = "codex"
     case cursorIDE      = "cursor_ide"
+    case openAIAPI      = "openai_api"
+    case codex          = "codex"
     case chatGPTDesktop = "chatgpt_desktop"
     case antigravity    = "antigravity"
-
-    // Tier 2: API keys
-    case openAIAPI      = "openai_api"
     case anthropicAPI   = "anthropic_api"
 
     var id: String { rawValue }

@@ -241,19 +241,24 @@ struct NotchRootView: View {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.60, execute: work)
                         NSLog("[TN.diag] hoverGate exit dwell started (600ms)")
                     } else {
-                        // Cursor came back (or never really left). If a dwell
-                        // timer was running, cancel it — this wasn't a real
-                        // leave.
-                        if hoverGateExitDwellWork != nil {
-                            hoverGateExitDwellWork?.cancel()
-                            hoverGateExitDwellWork = nil
-                            NSLog("[TN.diag] hoverGate exit dwell CANCELLED — cursor came back")
+                        // shouldShow→true while gate is active.
+                        // If isHovered, cursor came back (real or spurious) — block it.
+                        // If NOT isHovered, the flip came from activeProviders (an LLM
+                        // started consuming), which is cursor-independent — fall through
+                        // and let the settle timer call expand() normally.
+                        if isHovered {
+                            if hoverGateExitDwellWork != nil {
+                                hoverGateExitDwellWork?.cancel()
+                                hoverGateExitDwellWork = nil
+                                NSLog("[TN.diag] hoverGate exit dwell CANCELLED — cursor came back")
+                            }
+                            NSLog("[TN.diag] shouldShow→true IGNORED — still awaiting genuine cursor leave (count=\(windowHoverState.stripEnterCount) baseline=\(baseline))")
+                            hoverSettleWork?.cancel()
+                            hoverSettleWork = nil
+                            return
                         }
-                        NSLog("[TN.diag] shouldShow→true IGNORED — still awaiting genuine cursor leave (count=\(windowHoverState.stripEnterCount) baseline=\(baseline))")
+                        NSLog("[TN.diag] shouldShow→true from activeProviders — bypassing hover gate, allowing expand")
                     }
-                    hoverSettleWork?.cancel()
-                    hoverSettleWork = nil
-                    return
                 }
                 if windowHoverState.stripEnterCount > baseline {
                     NSLog("[TN.diag] hoverGate cleared — fresh enter (count=\(windowHoverState.stripEnterCount) > baseline=\(baseline))")
