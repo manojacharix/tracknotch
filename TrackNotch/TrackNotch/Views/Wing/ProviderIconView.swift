@@ -22,10 +22,9 @@ struct WingIconView: View {
         }
     }
 
-    /// Trim fraction: 0→1 maps to 0→360°. Minimum sliver so something is visible even at ~0%.
     private var trimFraction: Double {
         let clamped = min(usage.percentage, 100.0)
-        return clamped < 1 ? 0.03 : clamped / 100.0
+        return clamped <= 0 ? 0 : clamped / 100.0
     }
 
     var body: some View {
