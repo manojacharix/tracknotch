@@ -130,14 +130,16 @@ final class HardwareNotchWindow: NotchWindowBase {
             self?.toggleDropdown()
         }
         strip.onHoverEnter = { [weak self] in
-            self?.haptic()
-            ProviderRegistry.shared.stripEnterCount += 1
-            ProviderRegistry.shared.isExternalHovered = true
-            self?.updateStripFrame()
+            guard let self else { return }
+            self.haptic()
+            self.hoverState.stripEnterCount += 1
+            self.hoverState.isHovered = true
+            self.updateStripFrame()
         }
         strip.onHoverExit = { [weak self] in
-            ProviderRegistry.shared.isExternalHovered = false
-            self?.updateStripFrame()
+            guard let self else { return }
+            self.hoverState.isHovered = false
+            self.updateStripFrame()
         }
         strip.orderFrontRegardless()
         stripPanel = strip
@@ -195,7 +197,7 @@ final class HardwareNotchWindow: NotchWindowBase {
 
     private var visibleContentWidth: CGFloat {
         let geo = notchGeometry(screen: targetScreen)
-        guard ProviderRegistry.shared.isExternalHovered else { return geo.notchWidth }
+        guard hoverState.isHovered else { return geo.notchWidth }
         let visible = ProviderRegistry.shared.connectedProviders
             .filter { ProviderRegistry.shared.usageMap[$0] != nil }
         let leftW  = renderedWingWidth(count: visible.filter { $0.notchWing == .left }.count)

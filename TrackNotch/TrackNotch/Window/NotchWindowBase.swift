@@ -2,6 +2,17 @@ import AppKit
 import SwiftUI
 import Combine
 
+// MARK: - WindowHoverState
+
+/// Per-window hover state. One instance per NotchWindowBase subclass.
+/// Passed into NotchRootView via environmentObject so each window's
+/// hover signal is isolated — the hardware notch and external monitor
+/// no longer share a global isExternalHovered flag.
+final class WindowHoverState: ObservableObject {
+    @Published var isHovered: Bool = false
+    @Published var stripEnterCount: Int = 0
+}
+
 // MARK: - PassthroughHostingView (shared)
 
 final class PassthroughHostingView: NSHostingView<AnyView> {
@@ -45,6 +56,7 @@ class NotchWindowBase: NSPanel {
     private(set) var isDropdownVisible = false
 
     let frameReporter = DropdownFrameReporter()
+    let hoverState = WindowHoverState()
     private var contentHeightCancellable: AnyCancellable?
 
     private var outsideClickMonitor: Any?
@@ -92,7 +104,8 @@ class NotchWindowBase: NSPanel {
     // MARK: - Content installation (called by subclass after init)
 
     func installContent(_ view: AnyView) {
-        let hostingView = PassthroughHostingView(rootView: view)
+        let wrapped = AnyView(view.environmentObject(hoverState))
+        let hostingView = PassthroughHostingView(rootView: wrapped)
         hostingView.interactiveRectProvider = { [weak self] in self?.interactiveContentRectInView }
         hostingView.onPillBarTap = { [weak self] in
             guard let self, self.isDropdownVisible else { return }
@@ -312,7 +325,7 @@ class NotchWindowBase: NSPanel {
 
     func refreshAfterWake() {
         onRefreshAfterWake()
-        ProviderRegistry.shared.isExternalHovered = false
+        hoverState.isHovered = false
     }
 
     func reposition(to screen: NSScreen) {

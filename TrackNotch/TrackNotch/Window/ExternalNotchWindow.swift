@@ -103,11 +103,11 @@ final class ExternalNotchWindow: NotchWindowBase {
         hoverLeaveTimer?.invalidate()
         hoverLeaveTimer = nil
         if inside {
-            if !ProviderRegistry.shared.isExternalHovered { haptic() }
-            ProviderRegistry.shared.isExternalHovered = true
+            if !hoverState.isHovered { haptic() }
+            hoverState.isHovered = true
         } else {
             hoverLeaveTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
-                ProviderRegistry.shared.isExternalHovered = false
+                self?.hoverState.isHovered = false
                 self?.updateExternalStripFrame()
             }
         }
@@ -168,7 +168,7 @@ final class ExternalNotchWindow: NotchWindowBase {
         if let o = collapseObserver { NotificationCenter.default.removeObserver(o); collapseObserver = nil }
         hoverLeaveTimer?.invalidate()
         hoverLeaveTimer = nil
-        ProviderRegistry.shared.isExternalHovered = false
+        hoverState.isHovered = false
         super.close()
     }
 }

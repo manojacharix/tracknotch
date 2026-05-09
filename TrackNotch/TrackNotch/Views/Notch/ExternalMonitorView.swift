@@ -32,6 +32,7 @@ private let extExpandedBottomRadius:   CGFloat = 26
 struct ExternalMonitorView: View {
     @EnvironmentObject var registry: ProviderRegistry
     @EnvironmentObject var frameReporter: DropdownFrameReporter
+    @EnvironmentObject var windowHoverState: WindowHoverState
 
     /// Height of the macOS menu bar on this screen — pill sits just below it.
     private var menuBarHeight: CGFloat {
@@ -76,7 +77,7 @@ struct ExternalMonitorView: View {
     /// during async animation sequences. True while an expand or collapse is in flight.
     @State private var dropdownTransitioning: Bool = false
 
-    private var isHovered: Bool { registry.isExternalHovered }
+    private var isHovered: Bool { windowHoverState.isHovered }
 
     // Idle: only active/lingering providers. Hover: all connected with usage data.
     private var visibleProviders: [LLMProvider] {

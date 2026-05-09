@@ -23,6 +23,7 @@ struct NotchRootView: View {
 
     @EnvironmentObject var registry: ProviderRegistry
     @EnvironmentObject var frameReporter: DropdownFrameReporter
+    @EnvironmentObject var windowHoverState: WindowHoverState
     @State private var geo: NotchGeometry? = nil
 
     @State private var iconsVisible: Bool = false
@@ -81,7 +82,7 @@ struct NotchRootView: View {
     /// before the morph (so the user sees one animation, not "wing slide-out
     /// then dropdown morph").
     @State private var lastHoverExpandTimestamp: TimeInterval = 0
-    /// Snapshot of registry.stripEnterCount captured at closeExpanded().
+    /// Snapshot of windowHoverState.stripEnterCount captured at closeExpanded().
     /// Combined with hoverGateAwaitingExit below, enforces the rule:
     /// "after a click-close, hover stays gated until the cursor has BOTH
     /// genuinely left the strip (shouldShow→false observed) AND then
@@ -103,7 +104,7 @@ struct NotchRootView: View {
     /// (cursor came back too quickly — wasn't a real leave).
     @State private var hoverGateExitDwellWork: DispatchWorkItem? = nil
 
-    private var isHovered: Bool { registry.isExternalHovered }
+    private var isHovered: Bool { windowHoverState.isHovered }
 
     private var targetProviders: [LLMProvider] {
         if isHovered || isExpanded {
@@ -230,11 +231,11 @@ struct NotchRootView: View {
                             guard hoverGateAwaitingExit else { return }
                             // shouldShow must still be false at fire time.
                             guard !shouldShow else { return }
-                            NSLog("[TN.diag] hoverGate stage1 — exit dwell satisfied, awaiting fresh enter (baseline rebased to \(registry.stripEnterCount))")
+                            NSLog("[TN.diag] hoverGate stage1 — exit dwell satisfied, awaiting fresh enter (baseline rebased to \(windowHoverState.stripEnterCount))")
                             hoverGateAwaitingExit = false
                             // Rebase baseline to whatever count is now. Only
                             // enters AFTER this point can satisfy the gate.
-                            hoverGateBaseline = registry.stripEnterCount
+                            hoverGateBaseline = windowHoverState.stripEnterCount
                         }
                         hoverGateExitDwellWork = work
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.60, execute: work)
@@ -248,18 +249,18 @@ struct NotchRootView: View {
                             hoverGateExitDwellWork = nil
                             NSLog("[TN.diag] hoverGate exit dwell CANCELLED — cursor came back")
                         }
-                        NSLog("[TN.diag] shouldShow→true IGNORED — still awaiting genuine cursor leave (count=\(registry.stripEnterCount) baseline=\(baseline))")
+                        NSLog("[TN.diag] shouldShow→true IGNORED — still awaiting genuine cursor leave (count=\(windowHoverState.stripEnterCount) baseline=\(baseline))")
                     }
                     hoverSettleWork?.cancel()
                     hoverSettleWork = nil
                     return
                 }
-                if registry.stripEnterCount > baseline {
-                    NSLog("[TN.diag] hoverGate cleared — fresh enter (count=\(registry.stripEnterCount) > baseline=\(baseline))")
+                if windowHoverState.stripEnterCount > baseline {
+                    NSLog("[TN.diag] hoverGate cleared — fresh enter (count=\(windowHoverState.stripEnterCount) > baseline=\(baseline))")
                     hoverGateBaseline = nil
                     // Fall through and process this shouldShow change normally.
                 } else {
-                    NSLog("[TN.diag] shouldShow→\(show) IGNORED — awaiting fresh strip enter (count=\(registry.stripEnterCount) baseline=\(baseline))")
+                    NSLog("[TN.diag] shouldShow→\(show) IGNORED — awaiting fresh strip enter (count=\(windowHoverState.stripEnterCount) baseline=\(baseline))")
                     hoverSettleWork?.cancel()
                     hoverSettleWork = nil
                     return
@@ -304,7 +305,7 @@ struct NotchRootView: View {
                     let cursor = NSEvent.mouseLocation
                     if strip.contains(cursor) {
                         NSLog("[TN.diag] hoverSettle SUPPRESSED collapse — cursor still inside strip (\(cursor) in \(strip)); restoring hover")
-                        registry.isExternalHovered = true
+                        windowHoverState.isHovered = true
                         return
                     }
                 }
@@ -317,7 +318,7 @@ struct NotchRootView: View {
         // was showing), targetProviders switches from activeProviders →
         // connectedProviders. shouldShow doesn't change so expand() never fires.
         // Slide out any connected providers not yet in iconSlideState.
-        .onChange(of: registry.isExternalHovered) { hovered in
+        .onChange(of: windowHoverState.isHovered) { hovered in
             guard hovered, pillExpanded, !isExpanded else { return }
             let missing = targetProviders.filter { iconSlideState[$0] == nil }
             NSLog("[TN.diag] hover entered while expanded — missing icons: \(missing.map(\.rawValue))")
@@ -548,9 +549,9 @@ struct NotchRootView: View {
         // dropdown close from window-reorder thrash, which would falsely
         // satisfy a count-only gate. Requiring an exit first means the
         // user must actually move cursor away then back.
-        hoverGateBaseline = registry.stripEnterCount
+        hoverGateBaseline = windowHoverState.stripEnterCount
         hoverGateAwaitingExit = true
-        NSLog("[TN.diag] closeExpanded — hoverGateBaseline=\(registry.stripEnterCount) awaitingExit=true")
+        NSLog("[TN.diag] closeExpanded — hoverGateBaseline=\(windowHoverState.stripEnterCount) awaitingExit=true")
         cancelPendingWork()
         let nonce = beginTransition()
         isEditMode = false
