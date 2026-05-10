@@ -52,6 +52,17 @@ final class ClaudeCodeMonitor: ObservableObject {
     private var statsDescriptor: Int32 = -1
     private var pollTimer: Timer?
 
+    // MARK: - Hook-based real-time activity state
+
+    private let hookStateFile = URL(fileURLWithPath: "/tmp/tracknotch_claude_active")
+    private let hookScript: URL = {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/tracknotch_hook.sh")
+    }()
+    private var hookStateSource: DispatchSourceFileSystemObject?
+    private var hookStateDescriptor: Int32 = -1
+    private var idleDebounceWork: DispatchWorkItem?
+
     private init() {}
 
     // MARK: - Lifecycle
@@ -62,17 +73,90 @@ final class ClaudeCodeMonitor: ObservableObject {
             TNLog.info("[ClaudeCode] Not installed — skipping start", category: .monitor)
             return
         }
+        installHooksIfNeeded()
         readStats()
         watchStatsFile()
+        watchHookStateFile()
         startActivityPolling()
     }
 
     func stop() {
         statsWatcher?.cancel()
         statsWatcher = nil
+        hookStateSource?.cancel()
+        hookStateSource = nil
+        idleDebounceWork?.cancel()
+        idleDebounceWork = nil
         pollTimer?.invalidate()
         pollTimer = nil
         if statsDescriptor >= 0 { close(statsDescriptor); statsDescriptor = -1 }
+        if hookStateDescriptor >= 0 { close(hookStateDescriptor); hookStateDescriptor = -1 }
+    }
+
+    // MARK: - Hook installation
+
+    private func installHooksIfNeeded() {
+        let fm = FileManager.default
+        guard !fm.fileExists(atPath: hookScript.path) else { return }
+
+        let script = "#!/usr/bin/env bash\necho \"$1\" > /tmp/tracknotch_claude_active\n"
+        try? script.write(to: hookScript, atomically: true, encoding: .utf8)
+        try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hookScript.path)
+
+        let settingsPath = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/settings.json").path
+        guard let data = fm.contents(atPath: settingsPath),
+              var settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var hooks = settings["hooks"] as? [String: Any] else { return }
+
+        let activeHook: [[String: Any]] = [["hooks": [["type": "command", "command": "bash ~/.claude/tracknotch_hook.sh active"]]]]
+        let idleHook:   [[String: Any]] = [["hooks": [["type": "command", "command": "bash ~/.claude/tracknotch_hook.sh idle"]]]]
+        hooks["UserPromptSubmit"] = activeHook
+        hooks["PreToolUse"]       = activeHook
+        hooks["PostToolUse"]      = idleHook
+        hooks["Stop"]             = idleHook
+        hooks["SessionEnd"]       = idleHook
+        settings["hooks"] = hooks
+
+        if let updated = try? JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys]) {
+            try? updated.write(to: URL(fileURLWithPath: settingsPath))
+        }
+    }
+
+    // MARK: - Hook state file watcher
+
+    private func watchHookStateFile() {
+        // Read current state immediately if file already exists (e.g. app restart while Claude is active)
+        readHookStateFile()
+
+        let fd = open(hookStateFile.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        hookStateDescriptor = fd
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd, eventMask: .write, queue: .main
+        )
+        source.setEventHandler { [weak self] in self?.readHookStateFile() }
+        source.setCancelHandler { [weak self] in
+            if let fd = self?.hookStateDescriptor, fd >= 0 { close(fd) }
+        }
+        source.resume()
+        hookStateSource = source
+    }
+
+    private func readHookStateFile() {
+        guard let content = try? String(contentsOf: hookStateFile, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        if content == "active" {
+            idleDebounceWork?.cancel()
+            idleDebounceWork = nil
+            if !isActivelyConsuming { isActivelyConsuming = true }
+        } else {
+            // 1 second grace before marking idle — absorbs gaps between back-to-back tool calls
+            idleDebounceWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.isActivelyConsuming = false }
+            idleDebounceWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+        }
     }
 
     // MARK: - Installation check
