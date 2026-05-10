@@ -146,7 +146,9 @@ class NotchWindowBase: NSPanel {
     var interactiveContentRectInView: NSRect? {
         guard isDropdownVisible, let contentView else { return nil }
         let bounds = contentView.bounds
-        let extPillHeight: CGFloat = 32
+        let pillH: CGFloat = mode.isDrawnNotch
+            ? 32
+            : notchGeometry(screen: targetScreen).notchHeight
         let sideInset: CGFloat = 4
         let dropdownW: CGFloat = mode.isDrawnNotch
             ? min(380, targetScreen.frame.width - 40)
@@ -154,7 +156,7 @@ class NotchWindowBase: NSPanel {
         let pillW: CGFloat = dropdownW - sideInset * 2
         let measured = frameReporter.dropdownContentHeight
         let contentH: CGFloat = measured > 0 ? measured : 200
-        let totalH = extPillHeight + contentH
+        let totalH = pillH + contentH
         return NSRect(
             x: bounds.midX - pillW / 2,
             y: bounds.height - totalH,
