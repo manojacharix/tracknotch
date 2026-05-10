@@ -360,13 +360,19 @@ struct NotchRootView: View {
         let nonce = beginTransition()
         lastHoverExpandTimestamp = ProcessInfo.processInfo.systemUptime
 
-        // Pre-register ALL connected providers at false so renderedProviders
-        // is already at full size before the pill animates out. Without this,
-        // hover-triggered icons arrive late, growing renderedProviders and
-        // shifting the wing width mid-animation. Active providers animate in
-        // immediately; connected-only providers stay hidden (false) until hover.
-        let connected = registry.connectedProviders.filter { registry.usageMap[$0] != nil }
-        for provider in connected { iconSlideState[provider] = false }
+        // Pre-register providers into iconSlideState at false so renderedProviders
+        // is stable before the pill animates out.
+        // On hover: pre-register ALL connected providers so connected-only icons
+        // don't arrive late and shift wing width mid-animation.
+        // Without hover (activeProviders path): only register active providers —
+        // pre-registering all connected would cause every icon to slide out even
+        // though the user hasn't hovered.
+        if isHovered {
+            let connected = registry.connectedProviders.filter { registry.usageMap[$0] != nil }
+            for provider in connected { iconSlideState[provider] = false }
+        } else {
+            for provider in targetProviders { iconSlideState[provider] = false }
+        }
         let allLeft  = leftProviders
         let allRight = rightProviders
         // Freeze wing counts so late usageMap arrivals don't animate pillWidth.
