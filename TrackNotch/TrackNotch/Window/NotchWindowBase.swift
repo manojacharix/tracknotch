@@ -17,22 +17,11 @@ final class WindowHoverState: ObservableObject {
 
 final class PassthroughHostingView: NSHostingView<AnyView> {
     var interactiveRectProvider: (() -> NSRect?)?
-    var onPillBarTap: (() -> Void)?
-    var pillBarHeight: CGFloat = 39
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let rect = interactiveRectProvider?() else { return nil }
         guard rect.contains(point) else { return nil }
         return super.hitTest(point)
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        let pt = convert(event.locationInWindow, from: nil)
-        if pt.y <= pillBarHeight {
-            onPillBarTap?()
-            return
-        }
-        super.mouseDown(with: event)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -107,11 +96,6 @@ class NotchWindowBase: NSPanel {
         let wrapped = AnyView(view.environmentObject(hoverState))
         let hostingView = PassthroughHostingView(rootView: wrapped)
         hostingView.interactiveRectProvider = { [weak self] in self?.interactiveContentRectInView }
-        hostingView.onPillBarTap = { [weak self] in
-            guard let self, self.isDropdownVisible else { return }
-            self.toggleDropdown()
-        }
-        hostingView.pillBarHeight = notchGeometry(screen: targetScreen).notchHeight
         hostingView.wantsLayer = true
         hostingView.layer?.masksToBounds = false
         hostingView.layer?.drawsAsynchronously = true

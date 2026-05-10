@@ -692,7 +692,48 @@ struct NotchRootView: View {
                     .allowsHitTesting(false)
             }
 
-            // When expanded: edit (left) and settings (right) flanking the notch.
+            // Expanded dropdown content — sits below the notch bar inside the shape
+            if isExpanded {
+                VStack(spacing: 0) {
+                    // Spacer for the physical notch bar height
+                    Color.clear.frame(height: pillHeight)
+
+                    DropdownContent(onDismiss: { onToggleDropdown() }, isEditMode: $isEditMode)
+                        .padding(.top, 8)
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, 8)
+                        .opacity(contentVisible ? 1 : 0)
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear
+                                    .onAppear {
+                                        expandedContentHeight = proxy.size.height
+                                        frameReporter.dropdownContentHeight = proxy.size.height
+                                    }
+                                    .onChange(of: proxy.size.height) { h in
+                                        expandedContentHeight = h
+                                        frameReporter.dropdownContentHeight = h
+                                    }
+                            }
+                        )
+                }
+                .frame(width: pillWidth)
+                .clipped()
+            }
+
+            // Notch bar tap zone — closes dropdown when tapping the bare notch strip.
+            // Sits above DropdownContent but below the edit/settings buttons so those
+            // still receive clicks.
+            if isExpanded {
+                Color.white.opacity(0.001)
+                    .frame(width: pillWidth, height: pillHeight)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onToggleDropdown() }
+                    .frame(width: pillWidth, height: notchShapeHeight, alignment: .top)
+            }
+
+            // Edit/settings buttons — topmost layer so they intercept clicks before
+            // the tap zone overlay above. Must be last in the ZStack.
             if isExpanded {
                 let wingRegionWidth = (pillWidth - geo.notchWidth) / 2
                 let notchGutter: CGFloat = 12
@@ -728,47 +769,6 @@ struct NotchRootView: View {
                 }
                 .frame(width: pillWidth, height: pillHeight)
                 .opacity(contentVisible ? 1 : 0)
-            }
-
-            // Expanded dropdown content — sits below the notch bar inside the shape
-            if isExpanded {
-                VStack(spacing: 0) {
-                    // Spacer for the physical notch bar height
-                    Color.clear.frame(height: pillHeight)
-
-                    DropdownContent(onDismiss: { onToggleDropdown() }, isEditMode: $isEditMode)
-                        .padding(.top, 8)
-                        .padding(.horizontal, 4)
-                        .padding(.bottom, 8)
-                        .opacity(contentVisible ? 1 : 0)
-                        .background(
-                            GeometryReader { proxy in
-                                Color.clear
-                                    .onAppear {
-                                        expandedContentHeight = proxy.size.height
-                                        frameReporter.dropdownContentHeight = proxy.size.height
-                                    }
-                                    .onChange(of: proxy.size.height) { h in
-                                        expandedContentHeight = h
-                                        frameReporter.dropdownContentHeight = h
-                                    }
-                            }
-                        )
-                }
-                .frame(width: pillWidth)
-                .clipped()
-            }
-
-            // Topmost layer: notch bar tap zone — above DropdownContent so taps
-            // on the pill strip always close the dropdown. Must be last in ZStack
-            // (highest layer) so it intercepts hits before DropdownContent's clipped
-            // VStack (which otherwise intercepts the full notchShapeHeight area).
-            if isExpanded {
-                Color.white.opacity(0.001)
-                    .frame(width: pillWidth, height: pillHeight)
-                    .contentShape(Rectangle())
-                    .onTapGesture { onToggleDropdown() }
-                    .frame(width: pillWidth, height: notchShapeHeight, alignment: .top)
             }
         }
         .frame(width: pillWidth, height: notchShapeHeight, alignment: .top)
