@@ -329,6 +329,13 @@ struct NotchRootView: View {
             NSLog("[TN.diag] hover entered while expanded — missing icons: \(missing.map(\.rawValue))")
             guard !missing.isEmpty else { return }
             for p in missing { iconSlideState[p] = false }
+            // Refresh frozen counts AFTER seeding missing into iconSlideState
+            // (so leftProviders/rightProviders already include the newcomers via
+            // renderedProviders) but BEFORE the stagger fires. frozenLeft/RightCount
+            // were set at expand() time with only the active provider count — without
+            // this update the pill stays narrow and icons overflow the clipped wing.
+            frozenLeftCount  = leftProviders.count
+            frozenRightCount = rightProviders.count
             for (idx, p) in missing.enumerated() {
                 let delay = Double(idx) * staggerStep
                 let work = DispatchWorkItem { iconSlideState[p] = true }
