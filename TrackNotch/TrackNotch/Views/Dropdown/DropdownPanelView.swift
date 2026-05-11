@@ -567,6 +567,10 @@ private struct LiquidFill: View {
                         .opacity(0.28)
                 }
             }
+            // Clip the entire ZStack (blur + noise) so blur bleed can't escape
+            // past the capsule edge. Placed on the ZStack rather than the Canvas
+            // layer so the noise overlay also composites within the clipped bounds.
+            .clipped()
         }
     }
 }
