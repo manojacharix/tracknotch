@@ -103,11 +103,15 @@ struct NotchRootView: View {
     /// dwell. Cancelled if shouldShow flips back to true within the window
     /// (cursor came back too quickly — wasn't a real leave).
     @State private var hoverGateExitDwellWork: DispatchWorkItem? = nil
+    /// Tracked post-close expand seed. Stored so cancelPendingWork() can cancel it,
+    /// and so it can suppress hoverSettleWork before calling expand() — preventing
+    /// the 1.10s exit-settle timer from collapsing the newly re-expanded wing.
+    @State private var postCloseExpandWork: DispatchWorkItem? = nil
 
     private var isHovered: Bool { windowHoverState.isHovered }
 
     private var targetProviders: [LLMProvider] {
-        if isHovered || isExpanded {
+        if isHovered {
             return registry.connectedProviders.filter { registry.usageMap[$0] != nil }
         }
         return registry.activeProviders
@@ -192,7 +196,18 @@ struct NotchRootView: View {
             }
         }
         .onAppear {
-            Task { @MainActor in geo = notchGeometry() }
+            Task { @MainActor in
+                geo = notchGeometry()
+                // onChange(of: shouldShow) only fires on changes, not on the initial value.
+                // After disable→re-enable, a fresh view appears with shouldShow already true
+                // (active provider running or cursor already hovering) — seed expand() manually.
+                if shouldShow {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        guard shouldShow, !pillExpanded else { return }
+                        expand()
+                    }
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchExpandDropdown)) { _ in
             NSLog("[TN.diag] NotchRootView got notchExpandDropdown — calling openExpanded")
@@ -260,10 +275,16 @@ struct NotchRootView: View {
                         NSLog("[TN.diag] shouldShow→true from activeProviders — bypassing hover gate, allowing expand")
                     }
                 }
-                if windowHoverState.stripEnterCount > baseline {
+                if show && !isHovered {
+                    // Active-provider flip — gate is hover-only, bypass count check
+                    NSLog("[TN.diag] hoverGate bypassed — activeProviders flip (not hover)")
+                    hoverGateBaseline = nil
+                    hoverGateAwaitingExit = false
+                    hoverGateExitDwellWork?.cancel()
+                    hoverGateExitDwellWork = nil
+                } else if windowHoverState.stripEnterCount > baseline {
                     NSLog("[TN.diag] hoverGate cleared — fresh enter (count=\(windowHoverState.stripEnterCount) > baseline=\(baseline))")
                     hoverGateBaseline = nil
-                    // Fall through and process this shouldShow change normally.
                 } else {
                     NSLog("[TN.diag] shouldShow→\(show) IGNORED — awaiting fresh strip enter (count=\(windowHoverState.stripEnterCount) baseline=\(baseline))")
                     hoverSettleWork?.cancel()
@@ -309,6 +330,12 @@ struct NotchRootView: View {
                 if !want, let strip = currentStripScreenRect() {
                     let cursor = NSEvent.mouseLocation
                     if strip.contains(cursor) {
+                        // Don't restore hover if the gate is active (post-dropdown-close reset).
+                        // Restoring here would permanently re-enter hover mode despite the gate.
+                        if hoverGateBaseline != nil {
+                            NSLog("[TN.diag] hoverSettle SUPPRESSED collapse restore — gate active, skipping isHovered restore")
+                            return
+                        }
                         NSLog("[TN.diag] hoverSettle SUPPRESSED collapse — cursor still inside strip (\(cursor) in \(strip)); restoring hover")
                         windowHoverState.isHovered = true
                         return
@@ -362,6 +389,7 @@ struct NotchRootView: View {
 
     private func expand() {
         // No-op if expand is already in flight OR the pill is already out.
+        NSLog("[TN.diag] expand() called pillExpanded=\(pillExpanded) expandIconsWork=\(expandIconsWork != nil)")
         if pillExpanded || expandIconsWork != nil { return }
         cancelPendingWork()
         let nonce = beginTransition()
@@ -494,7 +522,6 @@ struct NotchRootView: View {
             NSLog("[TN.diag] openExpanded EARLY RETURN — already expanded")
             return
         }
-        let alreadyShowing = pillExpanded && iconsVisible
         let sinceHoverExpand = ProcessInfo.processInfo.systemUptime - lastHoverExpandTimestamp
 
         // Fresh hover-expand still in flight (or just-finished). The wing has
@@ -504,14 +531,14 @@ struct NotchRootView: View {
         // so the dropdown appears to grow straight from the notch as one motion.
         if pillExpanded && sinceHoverExpand < 0.25 {
             NSLog("[TN.diag] openExpanded snapping pre-hover state (sinceHoverExpand=\(sinceHoverExpand))")
-            iconsVisible = false
             pillExpanded = false
+            iconSlideState = [:]
             // Fall through to cold-path morph below.
-        } else if alreadyShowing {
-            // Settled hover. Wings have been visible for >250ms, so the user
-            // already perceives them as the resting state — fast-path morph
-            // (drop wings from tree as the pill grows downward) is one motion.
-            iconsVisible = false  // non-animated; icons exit with the wing subtree
+        } else if pillExpanded {
+            // Pill already extended (hover or active-provider). Wings have been
+            // visible — fast-path morph so the dropdown appears to grow from the
+            // existing pill in one motion. Drop icons from tree as pill grows down.
+            iconSlideState = [:]
             let expandWork = DispatchWorkItem { [self] in
                 guard transitionNonce == nonce else { NSLog("[TN.diag] openExpanded fastpath CANCELLED"); return }
                 NSLog("[TN.diag] openExpanded fastpath morph running")
@@ -528,17 +555,14 @@ struct NotchRootView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: contentWork)
             }
             openExpandWork = expandWork
-            // Next-runloop hop so the non-animated iconsVisible flag commits
-            // before SwiftUI batches it into the spring transaction.
+            // Next-runloop hop so the iconSlideState clear commits before SwiftUI
+            // batches it into the spring transaction.
             DispatchQueue.main.async(execute: expandWork)
             return
         }
 
-        // Cold path: wings not visible (no prior hover). Keep the icon-fade
-        // prelude — harmless when nothing's drawn, gives the morph a moment.
-        let iconFadeDuration: Double = 0.12
-        let expandDelay:       Double = 0.10
-        withAnimation(.easeOut(duration: iconFadeDuration)) { iconsVisible = false }
+        // Cold path: pill not extended. Small delay so the morph reads as intentional.
+        let expandDelay: Double = 0.10
         let expandWork = DispatchWorkItem { [self] in
             guard transitionNonce == nonce else { NSLog("[TN.diag] openExpanded expandWork CANCELLED (nonce mismatch)"); return }
             NSLog("[TN.diag] openExpanded expandWork running (cold)")
@@ -583,7 +607,6 @@ struct NotchRootView: View {
             // wing subtree (gated on `pillExpanded && !isExpanded`) re-enters
             // the view tree for ~300ms before restoreWork shrinks it — the
             // user perceives this as a wing flashing open during the close.
-            iconsVisible = false
             withAnimation(.easeIn(duration: 0.28)) {
                 isExpanded = false
                 pillExpanded = false
@@ -591,6 +614,20 @@ struct NotchRootView: View {
         }
         closeCollapseWork = collapseWork
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.16, execute: collapseWork)
+
+            // shouldShow stays true (isSessionActive) so onChange won't fire — seed directly.
+        // Tracked so cancelPendingWork() can cancel it; clears hoverSettleWork before
+        // expand() so the 1.10s exit-settle timer can't collapse the newly re-expanded wing.
+        let expandNonce = nonce
+        let postClose = DispatchWorkItem {
+            guard transitionNonce == expandNonce else { return }
+            guard !isExpanded, !pillExpanded, shouldShow else { return }
+            hoverSettleWork?.cancel()
+            hoverSettleWork = nil
+            expand()
+        }
+        postCloseExpandWork = postClose
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.50, execute: postClose)
     }
 
     /// Recompute the strip panel's screen-space rect on demand. Used by the
@@ -644,6 +681,8 @@ struct NotchRootView: View {
         // pending iconSlideState[provider] = X mutations.
         for w in iconStaggerWorkItems { w.cancel() }
         iconStaggerWorkItems.removeAll()
+        postCloseExpandWork?.cancel()
+        postCloseExpandWork = nil
     }
 
     @discardableResult

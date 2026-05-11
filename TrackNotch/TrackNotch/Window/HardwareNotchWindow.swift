@@ -224,6 +224,7 @@ final class HardwareNotchWindow: NotchWindowBase {
     }
 
     override func onDropdownDidClose() {
+        hoverState.isHovered = false
         stripPanel?.ignoresMouseEvents = false
         updateStripFrame()
         if let strip = stripPanel { strip.order(.above, relativeTo: windowNumber) }

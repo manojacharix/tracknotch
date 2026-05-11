@@ -29,6 +29,9 @@ final class ProviderRegistry: ObservableObject {
     private static let lingerDuration: TimeInterval = 4
     private var lingerTimers: [LLMProvider: Timer] = [:]
     @Published private var lingering: Set<LLMProvider> = []
+    /// Providers that have been genuinely active at least once this session.
+    /// Guards linger from firing on the very first updateUsage() call at startup.
+    private var hasBeenActive: Set<LLMProvider> = []
 
     private init() {
         loadProviderOrder()
@@ -149,7 +152,6 @@ final class ProviderRegistry: ObservableObject {
                     self?.updateUsage(fetcher.toProviderUsage(monitor: monitor))
                 }
             }.store(in: &cancellables)
-            // Also subscribe to monitor for activity state changes
             monitor.objectWillChange.sink { [weak self] _ in
                 Task { @MainActor in
                     self?.updateUsage(fetcher.toProviderUsage(monitor: monitor))
@@ -162,6 +164,13 @@ final class ProviderRegistry: ObservableObject {
                 Task { @MainActor in self?.updateUsage(monitor.toProviderUsage()) }
             }.store(in: &cancellables)
         }
+        // isSessionActive drives activeProviders directly (not via usageMap).
+        // Force objectWillChange so SwiftUI recomputes activeProviders when session state flips.
+        monitor.$isSessionActive
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
     }
 
     private func startAPIFetchers() {
@@ -211,9 +220,13 @@ final class ProviderRegistry: ObservableObject {
     /// every 5 minutes, so its isActivelyConsuming is almost always false during active use.
     var activeProviders: [LLMProvider] {
         let anthropicAPIConnected = connectionStates[.anthropicAPI]?.isConnected == true
+        let claudeSessionActive = ClaudeCodeMonitor.shared.isSessionActive
         return orderedProviders.filter { provider in
             guard let usage = usageMap[provider] else { return false }
             if provider == .claudeCode && anthropicAPIConnected { return false }
+            // Session-active keeps Claude in the active set through inter-turn gaps
+            // (up to 30s after Stop) so the icon doesn't retract between messages.
+            if provider == .claudeCode && claudeSessionActive { return true }
             return usage.isActivelyConsuming || lingering.contains(provider)
         }
     }
@@ -267,8 +280,14 @@ final class ProviderRegistry: ObservableObject {
             lingerTimers[provider]?.invalidate()
             lingerTimers[provider] = nil
             lingering.remove(provider)
+            // Mark that this provider has been active at least once this session.
+            hasBeenActive.insert(provider)
         } else if !lingering.contains(provider) {
-            // Not active and not already lingering — start linger window
+            // Only linger if the provider was genuinely active earlier this session.
+            // Without this guard, the very first updateUsage() call on startup
+            // (isActivelyConsuming=false, first-ever update) would immediately start
+            // a 4s linger — making the icon show up on launch as if hovering.
+            guard hasBeenActive.contains(provider) else { return }
             lingering.insert(provider)
             let timer = Timer.scheduledTimer(withTimeInterval: Self.lingerDuration, repeats: false) { [weak self] _ in
                 Task { @MainActor [weak self] in
@@ -315,6 +334,7 @@ final class ProviderRegistry: ObservableObject {
                         self.lingering.remove(provider)
                         self.lingerTimers[provider]?.invalidate()
                         self.lingerTimers[provider] = nil
+                        self.hasBeenActive.remove(provider)
                     }
                 }
             }

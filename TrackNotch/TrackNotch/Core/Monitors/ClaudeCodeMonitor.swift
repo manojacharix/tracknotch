@@ -15,6 +15,10 @@ final class ClaudeCodeMonitor: ObservableObject {
     @Published private(set) var dailyActivity: [DailyActivity] = []
     @Published private(set) var dailyModelTokens: [DailyTokens] = []
     @Published private(set) var isActivelyConsuming = false
+    /// True while a conversation session is active (from first UserPromptSubmit until
+    /// 30s of silence after Stop). Stays true through inter-turn gaps so the icon
+    /// doesn't retract between Claude's response and the user's next message.
+    @Published private(set) var isSessionActive = false
 
     /// Context window fill of the most recently active session.
     /// Claude's usage fields are cumulative per session — the last assistant
@@ -62,6 +66,7 @@ final class ClaudeCodeMonitor: ObservableObject {
     private var hookStateSource: DispatchSourceFileSystemObject?
     private var hookStateDescriptor: Int32 = -1
     private var idleDebounceWork: DispatchWorkItem?
+    private var sessionIdleWork: DispatchWorkItem?
 
     private init() {}
 
@@ -87,6 +92,9 @@ final class ClaudeCodeMonitor: ObservableObject {
         hookStateSource = nil
         idleDebounceWork?.cancel()
         idleDebounceWork = nil
+        sessionIdleWork?.cancel()
+        sessionIdleWork = nil
+        isSessionActive = false
         pollTimer?.invalidate()
         pollTimer = nil
         if statsDescriptor >= 0 { close(statsDescriptor); statsDescriptor = -1 }
@@ -111,9 +119,11 @@ final class ClaudeCodeMonitor: ObservableObject {
 
         let activeHook: [[String: Any]] = [["hooks": [["type": "command", "command": "bash ~/.claude/tracknotch_hook.sh active"]]]]
         let idleHook:   [[String: Any]] = [["hooks": [["type": "command", "command": "bash ~/.claude/tracknotch_hook.sh idle"]]]]
+        // PostToolUse intentionally excluded — it fires between back-to-back tool calls,
+        // causing the icon to flicker idle/active during a single response. Only Stop
+        // and SessionEnd mark true end-of-activity.
         hooks["UserPromptSubmit"] = activeHook
         hooks["PreToolUse"]       = activeHook
-        hooks["PostToolUse"]      = idleHook
         hooks["Stop"]             = idleHook
         hooks["SessionEnd"]       = idleHook
         settings["hooks"] = hooks
@@ -147,15 +157,21 @@ final class ClaudeCodeMonitor: ObservableObject {
         guard let content = try? String(contentsOf: hookStateFile, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines) else { return }
         if content == "active" {
-            idleDebounceWork?.cancel()
-            idleDebounceWork = nil
+            idleDebounceWork?.cancel(); idleDebounceWork = nil
+            sessionIdleWork?.cancel(); sessionIdleWork = nil
             if !isActivelyConsuming { isActivelyConsuming = true }
+            if !isSessionActive { isSessionActive = true }
         } else {
-            // 1 second grace before marking idle — absorbs gaps between back-to-back tool calls
+            // per-tool: 1s debounce — retracts active indicator quickly
             idleDebounceWork?.cancel()
-            let work = DispatchWorkItem { [weak self] in self?.isActivelyConsuming = false }
-            idleDebounceWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+            let w1 = DispatchWorkItem { [weak self] in self?.isActivelyConsuming = false }
+            idleDebounceWork = w1
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: w1)
+            // per-session: 30s debounce — keeps icon visible through inter-turn gaps
+            sessionIdleWork?.cancel()
+            let w2 = DispatchWorkItem { [weak self] in self?.isSessionActive = false }
+            sessionIdleWork = w2
+            DispatchQueue.main.asyncAfter(deadline: .now() + 30.0, execute: w2)
         }
     }
 
@@ -201,17 +217,27 @@ final class ClaudeCodeMonitor: ObservableObject {
     private func pollActivity() {
         // Lightweight: only check file modification dates (no file reads)
         let latestDate = mostRecentModDate()
-        let active: Bool
-        if let modified = latestDate {
-            active = Date().timeIntervalSince(modified) < activityWindow
+
+        // When the hook watcher is running, it owns isActivelyConsuming entirely.
+        // The poll must not touch it — the watcher fires within milliseconds of each
+        // tool call and has no polling gap. Only fall back to file-mod detection when
+        // the hook watcher couldn't open the file (hooks not installed yet).
+        if hookStateSource != nil {
+            NSLog("[TN.diag] pollActivity — hook watcher active, skipping activity override (isActivelyConsuming=\(isActivelyConsuming))")
         } else {
-            active = false
+            let fileActive: Bool
+            if let modified = latestDate {
+                fileActive = Date().timeIntervalSince(modified) < activityWindow
+            } else {
+                fileActive = false
+            }
+            NSLog("[TN.diag] pollActivity — no hook watcher, fileActive=\(fileActive) isActivelyConsuming=\(isActivelyConsuming)")
+            if fileActive != isActivelyConsuming { isActivelyConsuming = fileActive }
         }
-        if active != isActivelyConsuming { isActivelyConsuming = active }
 
         // Heavy scan (JSONL reads + context) — every 3rd poll (~9s) or when active
         pollCount += 1
-        if active || pollCount % 3 == 0 {
+        if isActivelyConsuming || pollCount % 3 == 0 {
             Task.detached(priority: .utility) { [claudeDir, historyFile] in
                 let result = Self.scanAllJSONL(claudeDir: claudeDir, historyFile: historyFile)
                 await MainActor.run { [weak self] in
