@@ -103,6 +103,9 @@ struct NotchRootView: View {
     /// dwell. Cancelled if shouldShow flips back to true within the window
     /// (cursor came back too quickly — wasn't a real leave).
     @State private var hoverGateExitDwellWork: DispatchWorkItem? = nil
+    /// Safety timeout: clears the hover gate if the cursor never leaves the strip
+    /// after dropdown close (exit event never fires → gate stuck permanently).
+    @State private var hoverGateSafetyWork: DispatchWorkItem? = nil
     /// Tracked post-close expand seed. Stored so cancelPendingWork() can cancel it,
     /// and so it can suppress hoverSettleWork before calling expand() — preventing
     /// the 1.10s exit-settle timer from collapsing the newly re-expanded wing.
@@ -594,6 +597,21 @@ struct NotchRootView: View {
         hoverGateBaseline = windowHoverState.stripEnterCount
         hoverGateAwaitingExit = true
         NSLog("[TN.diag] closeExpanded — hoverGateBaseline=\(windowHoverState.stripEnterCount) awaitingExit=true")
+
+        // Safety: if cursor never leaves after close (mouseExited never fires),
+        // the gate gets permanently stuck. Force-clear it after 1.5s so hover
+        // can recover without the user having to move away and back.
+        hoverGateSafetyWork?.cancel()
+        let safetyWork = DispatchWorkItem {
+            guard hoverGateBaseline != nil || hoverGateAwaitingExit else { return }
+            NSLog("[TN.diag] hoverGate safety timeout — force-clearing stuck gate")
+            hoverGateBaseline = nil
+            hoverGateAwaitingExit = false
+            hoverGateExitDwellWork?.cancel()
+            hoverGateExitDwellWork = nil
+        }
+        hoverGateSafetyWork = safetyWork
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: safetyWork)
         cancelPendingWork()
         let nonce = beginTransition()
         isEditMode = false
@@ -683,6 +701,8 @@ struct NotchRootView: View {
         iconStaggerWorkItems.removeAll()
         postCloseExpandWork?.cancel()
         postCloseExpandWork = nil
+        hoverGateSafetyWork?.cancel()
+        hoverGateSafetyWork = nil
     }
 
     @discardableResult

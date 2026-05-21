@@ -312,6 +312,8 @@ class NotchWindowBase: NSPanel {
     func refreshAfterWake() {
         onRefreshAfterWake()
         hoverState.isHovered = false
+        // Let the view reset its pill state (fixes stale full-width pill on wake)
+        NotificationCenter.default.post(name: .notchRefreshAfterWake, object: nil)
     }
 
     func reposition(to screen: NSScreen) {
@@ -335,4 +337,5 @@ class NotchWindowBase: NSPanel {
 extension Notification.Name {
     static let notchExpandDropdown   = Notification.Name("notchExpandDropdown")
     static let notchCollapseDropdown = Notification.Name("notchCollapseDropdown")
+    static let notchRefreshAfterWake = Notification.Name("notchRefreshAfterWake")
 }

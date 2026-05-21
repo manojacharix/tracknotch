@@ -68,11 +68,13 @@ struct ExternalMonitorView: View {
     @State private var expandedContentHeight: CGFloat = 200
     @State private var transitionNonce:      Int     = 0
     @State private var dropdownTransitioning: Bool   = false
+    // Show all connected providers briefly on launch so users see what's connected.
+    @State private var isLaunching:          Bool    = true
 
     private var isHovered: Bool { windowHoverState.isHovered }
 
     private var visibleProviders: [LLMProvider] {
-        if isHovered || isExpanded {
+        if isHovered || isExpanded || isLaunching {
             return registry.connectedProviders.filter { registry.usageMap[$0] != nil }
         }
         return registry.activeProviders
@@ -106,35 +108,6 @@ struct ExternalMonitorView: View {
                     Color.black
 
                     if isExpanded {
-                        HStack {
-                            Button(isEditMode ? "done" : "edit") { isEditMode.toggle() }
-                                .buttonStyle(.borderless)
-                                .font(.system(size: 11, weight: .medium, design: .rounded))
-                                .foregroundColor(.white.opacity(0.7))
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 7)
-                                .background(Capsule().fill(Color.white.opacity(0.12)))
-                                .contentShape(Capsule())
-
-                            Spacer()
-
-                            Button("settings") { ConnectionWindowController.shared.open() }
-                                .buttonStyle(.borderless)
-                                .font(.system(size: 11, weight: .medium, design: .rounded))
-                                .foregroundColor(.white.opacity(0.7))
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 7)
-                                .background(Capsule().fill(Color.white.opacity(0.12)))
-                                .contentShape(Capsule())
-                        }
-                        .padding(.horizontal, 28)
-                        .padding(.top, 10)
-                        .padding(.bottom, 4)
-                        .frame(width: extExpandedWidth, height: extPillHeight)
-                        .opacity(contentVisible ? 1 : 0)
-                    }
-
-                    if isExpanded {
                         VStack(spacing: 0) {
                             Color.clear.frame(height: extPillHeight)
                             DropdownContent(onDismiss: {
@@ -162,13 +135,50 @@ struct ExternalMonitorView: View {
                     }
 
                     if isExpanded {
+                        // Tap-to-dismiss: covers pill bar + content area.
+                        // This layer is BELOW the buttons in ZStack order — buttons are
+                        // added after this block so they render on top and intercept first.
                         Color.white.opacity(0.001)
-                            .frame(width: extExpandedWidth, height: extPillHeight)
+                            .frame(width: extExpandedWidth, height: shapeHeight)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 NotificationCenter.default.post(name: .notchCollapseDropdown, object: nil)
                             }
                             .frame(width: extExpandedWidth, height: shapeHeight, alignment: .top)
+                    }
+
+                    // Buttons rendered LAST in ZStack = topmost hit-testing layer.
+                    // Must stay after the tap-to-dismiss overlay above.
+                    if isExpanded {
+                        HStack {
+                            Button(isEditMode ? "done" : "edit") { isEditMode.toggle() }
+                                .buttonStyle(.borderless)
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundColor(.white.opacity(0.7))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 7)
+                                .background(Capsule().fill(Color.white.opacity(0.12)))
+                                .contentShape(Capsule())
+
+                            Spacer()
+
+                            Button("settings") {
+                                TNLog.info("[UI] Settings button tapped — opening ConnectionWindow", category: .ui)
+                                ConnectionWindowController.shared.open()
+                            }
+                                .buttonStyle(.borderless)
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundColor(.white.opacity(0.7))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 7)
+                                .background(Capsule().fill(Color.white.opacity(0.12)))
+                                .contentShape(Capsule())
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.top, 10)
+                        .padding(.bottom, 4)
+                        .frame(width: extExpandedWidth, height: extPillHeight, alignment: .top)
+                        .opacity(contentVisible ? 1 : 0)
                     }
                 }
                 // NotchShape only at full pill phase — gives the inward top-corner "wing" look.
@@ -238,6 +248,25 @@ struct ExternalMonitorView: View {
         }
         .onAppear {
             if hasIcons { showWithActivity() }
+            // Show all connected providers for 3s on launch, then settle to active-only.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                withAnimation(.easeIn(duration: 0.4)) { isLaunching = false }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .notchRefreshAfterWake)) { _ in
+            guard !isExpanded else { return }
+            // Reset pill state fully after wake — stale pillW/pillPhase cause the
+            // full-width single-icon bug on notchless displays.
+            TNLog.info("[UI] Wake reset: pillInTree=\(pillInTree) hasIcons=\(hasIcons) — resetting pill state", category: .ui)
+            cancelCollapse()
+            cancelPendingTransitionWork()
+            iconsSpread = false
+            pillInTree = false
+            pillOpacity = 0
+            applyDotDimensions()
+            if hasIcons {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { showWithActivity() }
+            }
         }
     }
 
@@ -276,7 +305,12 @@ struct ExternalMonitorView: View {
 
         if pillInTree && pillPhase >= 2 {
             pillOpacity = 1.0
-            withAnimation(.easeOut(duration: 0.25)) { iconsSpread = true }
+            // Recalculate pill width — hover switches visibleProviders from
+            // activeProviders to connectedProviders, so targetPillWidth is larger.
+            withAnimation(.easeOut(duration: 0.25)) {
+                applyPillDimensions()
+                iconsSpread = true
+            }
             return
         }
 
@@ -318,7 +352,16 @@ struct ExternalMonitorView: View {
         cancelPendingTransitionWork()
         let nonce = beginTransition()
 
-        if hasIcons { return }
+        // When active icons are present, retract to the active-only pill width.
+        // visibleProviders switches back to activeProviders once isHovered=false,
+        // so targetPillWidth at this point reflects the active-only count.
+        if hasIcons {
+            withAnimation(.easeIn(duration: 0.2)) {
+                applyPillDimensions()
+                iconsSpread = true
+            }
+            return
+        }
 
         // Step 1: icons retract to center
         withAnimation(.easeIn(duration: 0.2)) { iconsSpread = false }

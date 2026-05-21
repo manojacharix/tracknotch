@@ -29,6 +29,7 @@ final class ClaudeCodeMonitor: ObservableObject {
     static let defaultContextLimit = 200_000
     @Published private(set) var liveMessagesToday: Int = 0
     @Published private(set) var liveTokensToday: Int = 0
+    @Published private(set) var liveTokensWeekly: Int = 0
 
     /// Consider Claude active if any session file was modified within this window
     private let activityWindow: TimeInterval = 4
@@ -244,6 +245,10 @@ final class ClaudeCodeMonitor: ObservableObject {
                     guard let self else { return }
                     if self.liveMessagesToday != result.messages { self.liveMessagesToday = result.messages }
                     if self.liveTokensToday != result.tokens { self.liveTokensToday = result.tokens }
+                    if self.liveTokensWeekly != result.weeklyTokens {
+                        self.liveTokensWeekly = result.weeklyTokens
+                        TNLog.debug("[Monitor] Weekly scan: \(result.weeklyTokens) tokens (liveTokensWeekly updated)", category: .monitor)
+                    }
                     if self.activeSessionContextTokens != result.contextTokens { self.activeSessionContextTokens = result.contextTokens }
                 }
             }
@@ -282,14 +287,17 @@ final class ClaudeCodeMonitor: ObservableObject {
     private struct ScanResult {
         var messages: Int = 0
         var tokens: Int = 0
+        var weeklyTokens: Int = 0
         var contextTokens: Int = 0
     }
 
     /// Runs entirely off the main thread. Single pass over all project dirs:
-    /// counts today's messages, today's tokens, and reads active session context.
+    /// counts today's messages, today's tokens, weekly tokens, and reads active session context.
     private nonisolated static func scanAllJSONL(claudeDir: URL, historyFile: URL) -> ScanResult {
         let fm = FileManager.default
-        let dayStart = Calendar.current.startOfDay(for: Date())
+        let cal = Calendar.current
+        let dayStart = cal.startOfDay(for: Date())
+        let weekStart = cal.date(byAdding: .day, value: -6, to: dayStart) ?? dayStart
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
@@ -317,8 +325,8 @@ final class ClaudeCodeMonitor: ObservableObject {
                     latestSessionFile = file
                 }
 
-                // Only scan files modified today for message/token counts
-                guard modDate >= dayStart else { continue }
+                // Weekly scan: files modified in the past 7 days
+                guard modDate >= weekStart else { continue }
                 guard let content = try? String(contentsOf: file, encoding: .utf8) else { continue }
 
                 for line in content.split(separator: "\n", omittingEmptySubsequences: true) {
@@ -327,13 +335,28 @@ final class ClaudeCodeMonitor: ObservableObject {
                           obj["type"] as? String == "assistant",
                           let tsStr = obj["timestamp"] as? String,
                           let ts = iso.date(from: tsStr),
-                          ts >= dayStart
+                          ts >= weekStart
                     else { continue }
 
-                    result.messages += 1
+                    let tokenCount: Int
                     if let msg = obj["message"] as? [String: Any],
                        let usage = msg["usage"] as? [String: Any] {
-                        result.tokens += usage["output_tokens"] as? Int ?? 0
+                        tokenCount = (usage["input_tokens"] as? Int ?? 0)
+                            + (usage["output_tokens"] as? Int ?? 0)
+                            + (usage["cache_read_input_tokens"] as? Int ?? 0)
+                            + (usage["cache_creation_input_tokens"] as? Int ?? 0)
+                    } else {
+                        tokenCount = 0
+                    }
+
+                    result.weeklyTokens += tokenCount
+
+                    if ts >= dayStart {
+                        result.messages += 1
+                        if let msg = obj["message"] as? [String: Any],
+                           let usage = msg["usage"] as? [String: Any] {
+                            result.tokens += usage["output_tokens"] as? Int ?? 0
+                        }
                     }
                 }
             }
@@ -438,6 +461,11 @@ final class ClaudeCodeMonitor: ObservableObject {
     // MARK: - Token computations
 
     var weeklyTokens: Int {
+        // Prefer the live JSONL weekly scan when it has data. This covers the case
+        // where stats-cache.json is stale (last computed date > 7 days ago), which
+        // would otherwise make pastTokens = 0 and the percentage stay at 0%.
+        if liveTokensWeekly > 0 { return liveTokensWeekly }
+
         let cal = Calendar.current
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
