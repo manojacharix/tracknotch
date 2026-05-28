@@ -249,11 +249,6 @@ struct DropdownProviderPill: View {
             // sibling cells from DropdownContent (one with secondary=false,
             // one with secondary=true), so each pill stays uncluttered.
             ZStack(alignment: .leading) {
-                    // Background track
-                    Capsule()
-                        .fill(Color.white.opacity(0.08))
-                        .frame(width: w, height: pillHeight)
-
                     if !isAPIToken {
                         // Subscription/local: liquid fill progress bar
                         let hasProgress = displayPct > 0
@@ -265,60 +260,50 @@ struct DropdownProviderPill: View {
                         if hasProgress {
                             LiquidFill(percentage: displayPct, height: pillHeight)
                                 .frame(width: fillWidth, height: pillHeight)
-                                .clipShape(Capsule())
-                                .animation(.easeOut(duration: 0.6), value: displayPct)
                         }
                     }
 
                     // Left: stats text
-                    VStack(alignment: .leading, spacing: 2) {
-                        if isAPIToken {
-                            // API token: show cost as primary, or note if org-only tracking
-                            if usage.fetchError == "orgs_only" {
-                                Text("—")
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.white.opacity(0.45))
-                                Text("orgs only")
-                                    .font(.system(size: 8, weight: .regular, design: .rounded))
-                                    .foregroundColor(.white.opacity(0.3))
-                            } else {
-                                Text(costLabel)
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.white)
-                                    .monospacedDigit()
-                                if let limit = usage.costLimitUSD, limit > 0 {
-                                    Text("of $\(Int(limit))")
-                                        .font(.system(size: 8, weight: .regular, design: .rounded))
-                                        .foregroundColor(.white.opacity(0.4))
-                                        .lineLimit(1)
-                                } else {
-                                    Text("this month")
-                                        .font(.system(size: 8, weight: .regular, design: .rounded))
-                                        .foregroundColor(.white.opacity(0.4))
+                    // API token has no fill so a single white layer suffices.
+                    // Subscription/local renders two identical layers masked to each
+                    // side of the fill boundary so text is charcoal on fill, white on background.
+                    let fillWidth = isAPIToken ? 0 : min(w, w * CGFloat(displayPct / 100))
+                    if isAPIToken {
+                        statsText(onFill: false)
+                            .padding(.leading, 11)
+                            .frame(maxWidth: w - 34, alignment: .leading)
+                            .opacity(contentOpacity)
+                    } else {
+                        // maskOffset: fill boundary relative to the text's own coordinate space
+                        // (fillWidth is from pill left edge; text is inset by 11pt leading pad)
+                        let leadingPad: CGFloat = 11
+                        let maskOffset = max(0, fillWidth - leadingPad)
+                        ZStack(alignment: .leading) {
+                            // White layer — visible right of fill boundary (background region)
+                            statsText(onFill: false)
+                                .mask(alignment: .leading) {
+                                    HStack(spacing: 0) {
+                                        Rectangle()
+                                            .frame(width: maskOffset)
+                                            .opacity(0)
+                                        Rectangle()
+                                    }
                                 }
-                            }
-                        } else {
-                            // Subscription/local: percentage as primary.
-                            // Text is white at 0–10% (fill is thin/absent, dark bg shows through).
-                            // Above 10% the fill covers the text area — switch to dark charcoal.
-                            let onFill = displayPct > 10
-                            Text("\(Int(displayPct))%")
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .foregroundColor(onFill ? Color(hex: "252728") : .white.opacity(displayPct > 0 ? 1 : 0.45))
-                                .monospacedDigit()
-                            if let detail = detailLabel {
-                                Text(detail)
-                                    .font(.system(size: 8, weight: .regular, design: .rounded))
-                                    .foregroundColor(onFill ? Color(hex: "252728").opacity(0.7) : .white.opacity(displayPct > 0 ? 0.75 : 0.3))
-                                    .monospacedDigit()
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.8)
-                            }
+                            // Charcoal layer — visible left of fill boundary (fill region)
+                            statsText(onFill: true)
+                                .mask(alignment: .leading) {
+                                    HStack(spacing: 0) {
+                                        Rectangle()
+                                            .frame(width: maskOffset)
+                                        Rectangle()
+                                            .opacity(0)
+                                    }
+                                }
                         }
+                        .padding(.leading, leadingPad)
+                        .frame(maxWidth: w - 34, alignment: .leading)
+                        .opacity(contentOpacity)
                     }
-                    .padding(.leading, 11)
-                    .frame(maxWidth: w - 34, alignment: .leading)
-                    .opacity(contentOpacity)
 
                     // Right: app icon + error dot
                     HStack(spacing: 0) {
@@ -341,6 +326,9 @@ struct DropdownProviderPill: View {
                     .frame(width: w)
                     .opacity(contentOpacity)
                 }
+                .frame(width: w, height: pillHeight)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
+                .clipShape(Capsule())
         }
         .frame(height: pillHeight)
         .onAppear {
@@ -405,6 +393,57 @@ struct DropdownProviderPill: View {
         if h >= 24 { return "\(h / 24)d \(h % 24)h" }
         if h > 0   { return "\(h)h \(m)m" }
         return "\(m)m"
+    }
+
+    // MARK: - Stats text helper
+
+    /// Renders the stats VStack with colors appropriate for its background.
+    /// `onFill: true` → charcoal (sits on liquid fill); `false` → white (sits on dark track).
+    @ViewBuilder
+    private func statsText(onFill: Bool) -> some View {
+        let primary:   Color = onFill ? Color(hex: "252728")         : .white.opacity(displayPct > 0 ? 1 : 0.45)
+        let secondary: Color = onFill ? Color(hex: "252728").opacity(0.7) : .white.opacity(displayPct > 0 ? 0.75 : 0.3)
+
+        VStack(alignment: .leading, spacing: 2) {
+            if isAPIToken {
+                if usage.fetchError == "orgs_only" {
+                    Text("—")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.45))
+                    Text("orgs only")
+                        .font(.system(size: 8, weight: .regular, design: .rounded))
+                        .foregroundColor(.white.opacity(0.3))
+                } else {
+                    Text(costLabel)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                        .monospacedDigit()
+                    if let limit = usage.costLimitUSD, limit > 0 {
+                        Text("of $\(Int(limit))")
+                            .font(.system(size: 8, weight: .regular, design: .rounded))
+                            .foregroundColor(.white.opacity(0.4))
+                            .lineLimit(1)
+                    } else {
+                        Text("this month")
+                            .font(.system(size: 8, weight: .regular, design: .rounded))
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+                }
+            } else {
+                Text("\(Int(displayPct))%")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(primary)
+                    .monospacedDigit()
+                if let detail = detailLabel {
+                    Text(detail)
+                        .font(.system(size: 8, weight: .regular, design: .rounded))
+                        .foregroundColor(secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+        }
     }
 
     private var costLabel: String {
