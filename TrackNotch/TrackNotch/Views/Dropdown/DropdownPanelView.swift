@@ -585,10 +585,10 @@ private struct LiquidFill: View {
                     for i in 0...steps {
                         let y = size.height * CGFloat(i) / CGFloat(steps)
                         let t = Double(i) / Double(steps)
-                        let wave = amplitude * CGFloat(
-                            sin(t * .pi * 2 * frequency + wavePhase) * 0.65 +
-                            sin(t * .pi * 2 * frequency * 1.6 + wavePhase * 1.3) * 0.35
-                        )
+                        let angle: Double = t * .pi * 2 * frequency
+                        let primary: Double = sin(angle + wavePhase) * 0.65
+                        let secondary: Double = sin(angle * 1.6 + wavePhase * 1.3) * 0.35
+                        let wave = amplitude * CGFloat(primary + secondary)
                         path.addLine(to: CGPoint(x: blobWidth + wave, y: y))
                     }
                     path.addLine(to: CGPoint(x: 0, y: size.height))
