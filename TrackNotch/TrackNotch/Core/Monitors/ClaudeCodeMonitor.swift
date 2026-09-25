@@ -205,6 +205,8 @@ final class ClaudeCodeMonitor: ObservableObject {
     /// Polls every 3 seconds. Activity detection uses only file modification dates (cheap).
     /// Heavy JSONL scanning runs on a background thread every 3rd poll (~9s).
     private var pollCount: Int = 0
+    private var isScanning = false
+    private let scanCache = JSONLScanCache()
 
     private func startActivityPolling() {
         pollTimer?.invalidate()
@@ -236,13 +238,16 @@ final class ClaudeCodeMonitor: ObservableObject {
             if fileActive != isActivelyConsuming { isActivelyConsuming = fileActive }
         }
 
-        // Heavy scan (JSONL reads + context) — every 3rd poll (~9s) or when active
+        // Heavy scan (JSONL reads + context) — every 3rd poll (~9s) or when active.
+        // Never overlap scans: stacked scans were the source of runaway CPU.
         pollCount += 1
-        if isActivelyConsuming || pollCount % 3 == 0 {
-            Task.detached(priority: .utility) { [claudeDir, historyFile] in
-                let result = Self.scanAllJSONL(claudeDir: claudeDir, historyFile: historyFile)
+        if !isScanning && (isActivelyConsuming || pollCount % 3 == 0) {
+            isScanning = true
+            Task.detached(priority: .utility) { [claudeDir, historyFile, scanCache] in
+                let result = Self.scanAllJSONL(claudeDir: claudeDir, historyFile: historyFile, cache: scanCache)
                 await MainActor.run { [weak self] in
                     guard let self else { return }
+                    self.isScanning = false
                     if self.liveMessagesToday != result.messages { self.liveMessagesToday = result.messages }
                     if self.liveTokensToday != result.tokens { self.liveTokensToday = result.tokens }
                     if self.liveTokensWeekly != result.weeklyTokens {
@@ -293,7 +298,10 @@ final class ClaudeCodeMonitor: ObservableObject {
 
     /// Runs entirely off the main thread. Single pass over all project dirs:
     /// counts today's messages, today's tokens, weekly tokens, and reads active session context.
-    private nonisolated static func scanAllJSONL(claudeDir: URL, historyFile: URL) -> ScanResult {
+    /// Incremental: each file is read from the byte offset where the previous scan stopped,
+    /// so steady-state cost is proportional to newly appended lines, not total history.
+    /// Caller guarantees only one scan runs at a time (cache is not thread-safe).
+    private nonisolated static func scanAllJSONL(claudeDir: URL, historyFile: URL, cache: JSONLScanCache) -> ScanResult {
         let fm = FileManager.default
         let cal = Calendar.current
         let dayStart = cal.startOfDay(for: Date())
@@ -304,6 +312,7 @@ final class ClaudeCodeMonitor: ObservableObject {
         var result = ScanResult()
         var latestSessionFile: URL? = nil
         var latestSessionDate: Date = .distantPast
+        var seen = Set<String>()
 
         let projectsDir = claudeDir.appendingPathComponent("projects")
         guard let projectDirs = try? fm.contentsOfDirectory(
@@ -312,7 +321,7 @@ final class ClaudeCodeMonitor: ObservableObject {
 
         for projectDir in projectDirs {
             guard let files = try? fm.contentsOfDirectory(
-                at: projectDir, includingPropertiesForKeys: [.contentModificationDateKey],
+                at: projectDir, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
                 options: .skipsHiddenFiles
             ) else { continue }
 
@@ -327,62 +336,82 @@ final class ClaudeCodeMonitor: ObservableObject {
 
                 // Weekly scan: files modified in the past 7 days
                 guard modDate >= weekStart else { continue }
-                guard let content = try? String(contentsOf: file, encoding: .utf8) else { continue }
+                seen.insert(file.path)
+                var state = ingest(file: file, into: cache.files[file.path] ?? .init(), iso: iso)
+                state.entries.removeAll { $0.ts < weekStart }
+                cache.files[file.path] = state
 
-                for line in content.split(separator: "\n", omittingEmptySubsequences: true) {
-                    guard let data = line.data(using: .utf8),
-                          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          obj["type"] as? String == "assistant",
-                          let tsStr = obj["timestamp"] as? String,
-                          let ts = iso.date(from: tsStr),
-                          ts >= weekStart
-                    else { continue }
-
-                    let tokenCount: Int
-                    if let msg = obj["message"] as? [String: Any],
-                       let usage = msg["usage"] as? [String: Any] {
-                        tokenCount = (usage["input_tokens"] as? Int ?? 0)
-                            + (usage["output_tokens"] as? Int ?? 0)
-                            + (usage["cache_read_input_tokens"] as? Int ?? 0)
-                            + (usage["cache_creation_input_tokens"] as? Int ?? 0)
-                    } else {
-                        tokenCount = 0
-                    }
-
-                    result.weeklyTokens += tokenCount
-
-                    if ts >= dayStart {
+                for entry in state.entries {
+                    result.weeklyTokens += entry.total
+                    if entry.ts >= dayStart {
                         result.messages += 1
-                        if let msg = obj["message"] as? [String: Any],
-                           let usage = msg["usage"] as? [String: Any] {
-                            result.tokens += usage["output_tokens"] as? Int ?? 0
-                        }
+                        result.tokens += entry.output
                     }
                 }
             }
         }
 
-        // Read active session context from the most recent file
-        if let file = latestSessionFile,
-           let content = try? String(contentsOf: file, encoding: .utf8) {
-            let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
-            for line in lines.reversed() {
-                guard let data = line.data(using: .utf8),
-                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      obj["type"] as? String == "assistant",
-                      let msg = obj["message"] as? [String: Any],
-                      let usage = msg["usage"] as? [String: Any]
-                else { continue }
-
-                let input      = usage["input_tokens"] as? Int ?? 0
-                let cacheRead  = usage["cache_read_input_tokens"] as? Int ?? 0
-                let cacheWrite = usage["cache_creation_input_tokens"] as? Int ?? 0
-                result.contextTokens = input + cacheRead + cacheWrite
-                break
+        // Active session context: last assistant usage seen in the most recent file.
+        // That file is normally already ingested above; if it is older than the weekly
+        // window, ingest it on its own so the context arc still reflects it.
+        if let file = latestSessionFile {
+            if seen.contains(file.path) {
+                result.contextTokens = cache.files[file.path]?.lastContext ?? 0
+            } else {
+                var state = ingest(file: file, into: cache.files[file.path] ?? .init(), iso: iso)
+                state.entries.removeAll()
+                cache.files[file.path] = state
+                seen.insert(file.path)
+                result.contextTokens = state.lastContext
             }
         }
 
+        // Drop files that fell out of the window or were deleted
+        cache.files = cache.files.filter { seen.contains($0.key) }
         return result
+    }
+
+    /// Byte pattern present on every assistant line; lets us skip JSON parsing of
+    /// user/tool-result lines, which are the bulk of the bytes.
+    private nonisolated static let assistantMarker = Data("\"type\":\"assistant\"".utf8)
+
+    /// Parses only the complete lines appended since `state.offset`. A trailing partial
+    /// line (write in progress) is left for the next scan.
+    private nonisolated static func ingest(
+        file: URL, into state: JSONLScanCache.FileState, iso: ISO8601DateFormatter
+    ) -> JSONLScanCache.FileState {
+        var state = state
+        let size = UInt64((try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
+        if size < state.offset { state = .init() }  // truncated or rewritten
+        guard size > state.offset,
+              let handle = try? FileHandle(forReadingFrom: file) else { return state }
+        defer { try? handle.close() }
+
+        guard (try? handle.seek(toOffset: state.offset)) != nil,
+              let data = try? handle.readToEnd(),
+              let lastNewline = data.lastIndex(of: 0x0A) else { return state }
+
+        let complete = data[data.startIndex...lastNewline]
+        state.offset += UInt64(complete.count)
+
+        for line in complete.split(separator: 0x0A, omittingEmptySubsequences: true) {
+            guard line.range(of: assistantMarker) != nil,
+                  let obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                  obj["type"] as? String == "assistant"
+            else { continue }
+
+            let usage = (obj["message"] as? [String: Any])?["usage"] as? [String: Any]
+            let input      = usage?["input_tokens"] as? Int ?? 0
+            let output     = usage?["output_tokens"] as? Int ?? 0
+            let cacheRead  = usage?["cache_read_input_tokens"] as? Int ?? 0
+            let cacheWrite = usage?["cache_creation_input_tokens"] as? Int ?? 0
+            if usage != nil { state.lastContext = input + cacheRead + cacheWrite }
+
+            guard let tsStr = obj["timestamp"] as? String,
+                  let ts = iso.date(from: tsStr) else { continue }
+            state.entries.append(.init(ts: ts, total: input + output + cacheRead + cacheWrite, output: output))
+        }
+        return state
     }
 
     // MARK: - Stats file watching
@@ -522,4 +551,22 @@ final class ClaudeCodeMonitor: ObservableObject {
             isActivelyConsuming: isActivelyConsuming
         )
     }
+}
+
+/// Per-file incremental scan state for ClaudeCodeMonitor. Mutated only by the single
+/// in-flight scan (guarded by `isScanning`), hence @unchecked Sendable.
+final class JSONLScanCache: @unchecked Sendable {
+    struct Entry {
+        let ts: Date
+        let total: Int
+        let output: Int
+    }
+
+    struct FileState {
+        var offset: UInt64 = 0
+        var entries: [Entry] = []
+        var lastContext: Int = 0
+    }
+
+    var files: [String: FileState] = [:]
 }
