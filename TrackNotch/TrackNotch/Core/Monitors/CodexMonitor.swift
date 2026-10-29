@@ -91,9 +91,7 @@ final class CodexMonitor: ObservableObject {
     // MARK: - SQLite Reading
 
     private func readDB() {
-        var db: OpaquePointer?
-        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK,
-              let db else { return }
+        guard let db = SQLiteReadOnly.open(dbPath) else { return }
         defer { sqlite3_close(db) }
 
         let dayStart = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970)
