@@ -102,10 +102,8 @@ final class CursorMonitor: ObservableObject {
     // MARK: - SQLite Reading
 
     private func readDB() {
-        var db: OpaquePointer?
         // Open read-only to avoid locking Cursor's DB
-        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK,
-              let db = db else { return }
+        guard let db = SQLiteReadOnly.open(dbPath) else { return }
         defer { sqlite3_close(db) }
 
         let prevGenerations = monthlyGenerations
