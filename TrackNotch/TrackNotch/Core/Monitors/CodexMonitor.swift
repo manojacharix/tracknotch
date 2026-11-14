@@ -55,10 +55,9 @@ final class CodexMonitor: ObservableObject {
     // MARK: - Detection
 
     private func checkInstalled() {
-        let fm = FileManager.default
-        let appInstalled = fm.fileExists(atPath: "/Applications/Codex.app")
-                        || fm.fileExists(atPath: "\(NSHomeDirectory())/Applications/Codex.app")
-        isInstalled = appInstalled && fm.fileExists(atPath: dbPath)
+        // The DB is the source of truth: ChatGPT.app (which now bundles Codex),
+        // the Codex CLI and the legacy Codex.app all write it.
+        isInstalled = FileManager.default.fileExists(atPath: dbPath)
     }
 
     // MARK: - File Watching

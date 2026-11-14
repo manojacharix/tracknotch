@@ -135,7 +135,8 @@ final class CodexUsageFetcher: ObservableObject {
 
         if let rateLimit = json["rate_limit"] as? [String: Any] {
             if let primary = rateLimit["primary_window"] as? [String: Any] {
-                usedPercent = (primary["used_percent"] as? Double ?? 0) * 100
+                // used_percent is already 0–100.
+                usedPercent = primary["used_percent"] as? Double ?? 0
                 if let resetStr = primary["reset_at"] as? String {
                     resetAt = ISO8601DateFormatter().date(from: resetStr)
                 } else if let resetAfter = primary["reset_after_seconds"] as? Double {
@@ -143,7 +144,7 @@ final class CodexUsageFetcher: ObservableObject {
                 }
             }
             if let secondary = rateLimit["secondary_window"] as? [String: Any] {
-                let pct = (secondary["used_percent"] as? Double ?? 0) * 100
+                let pct = secondary["used_percent"] as? Double ?? 0
                 secondaryUsedPercent = pct
                 if let resetStr = secondary["reset_at"] as? String {
                     secondaryResetAt = ISO8601DateFormatter().date(from: resetStr)
